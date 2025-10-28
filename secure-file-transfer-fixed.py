@@ -684,7 +684,7 @@ class SecureFileTransferNode:
         finally:
             self.shutdown()
 
-def connect_to_server(self, host: str, port: int):
+    def connect_to_server(self, host: str, port: int):
         """Connette al server in modo sicuro"""
         self.running = True
         self.peer_address = host
@@ -707,7 +707,7 @@ def connect_to_server(self, host: str, port: int):
         finally:
             self.shutdown()
 
-def shutdown(self):
+    def shutdown(self):
         """Spegnimento sicuro"""
         self.running = False
         if self.socket:
