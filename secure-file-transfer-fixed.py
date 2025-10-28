@@ -246,16 +246,26 @@ class SecureKeyManager:
 
             return self.shared_secret
             
-    def _derive_shared_secret(self, secret: bytes):
-        """Deriva la chiave HMAC dal segreto scambiato"""
+def _derive_shared_secret(self, secret: bytes):
+        """Deriva la chiave HMAC E la chiave AES (Key-Split) dal segreto scambiato"""
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
-            length=32,
-            salt=b'secure_transfer_v2',
+            length=64,
+            salt=b'secure_transfer_v2_split', 
             iterations=100000,
             backend=default_backend()
         )
-        self.shared_secret = kdf.derive(secret)
+        # Deriva il materiale crittografico
+        derived_material = kdf.derive(secret)
+        
+        self.shared_secret = derived_material[:32] # Primi 32 per HMAC
+        self.current_key = derived_material[32:]   # Ultimi 32 per AES
+        
+        self.key_id = hashlib.sha256(self.current_key).hexdigest()[:16]
+        self.key_timestamp = datetime.now()
+
+        # Pulisci il materiale intermedio
+        _clear_memory(derived_material)
     
     def verify_signature(self, data: bytes, signature: bytes) -> bool:
         """Verifica firma HMAC con compare_digest per prevenire timing attacks"""
@@ -560,7 +570,7 @@ class SecureFileTransferNode:
                 return
 
             # Genera la chiave di sessione iniziale dopo l'handshake (e la ruota se presente)
-            self.key_manager.generate_session_key()
+           # self.key_manager.generate_session_key()
             
             # 2. Loop di comunicazione
             while self.running:
@@ -615,7 +625,7 @@ class SecureFileTransferNode:
         
         try:
             # Genera la chiave di sessione iniziale dopo l'handshake
-            self.key_manager.generate_session_key()
+            #self.key_manager.generate_session_key()
             
             logger.info(f"[{thread_name}] Sending initial PING to server...")
             ping_packet = self.protocol.create_packet('ping', {})
