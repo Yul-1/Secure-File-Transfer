@@ -56,6 +56,8 @@ MESSAGE_SCHEMA = {
     "required": ["type", "version", "timestamp", "payload"]
 }
 
+HEADER_PACKET_SIZE = struct.calcsize('!4sII16s12s16s') # = 56 byte
+
 # Configurazione logging sicuro
 logging.basicConfig(
     level=logging.INFO,
@@ -389,7 +391,7 @@ class SecureProtocol:
         
         # Parse header
         magic, version, payload_len, key_id_raw, nonce, tag = struct.unpack(
-            '!4sII16s12s16s', data[:54]
+            '!4sII16s12s16s', data[:HEADER_PACKET_SIZE] 
         )
         
         if magic != b'SFTP':
@@ -405,7 +407,7 @@ class SecureProtocol:
         key_id = key_id_raw.rstrip(b'\x00').decode('utf-8')
         
         # Decifra
-        ciphertext = data[54:54+payload_len]
+        ciphertext = data[HEADER_PACKET_SIZE : HEADER_PACKET_SIZE + payload_len]
         plaintext = self.decrypt_data(ciphertext, key_id, nonce, tag)
         
         # Verifica replay: Hash del plaintext per ID messaggio
@@ -454,7 +456,6 @@ class SecureProtocol:
 
 class SecureFileTransferNode:
     """Nodo sicuro per trasferimento file con gestione DoS"""
-    HEADER_PACKET_SIZE = struct.calcsize('!4sII16s12s16s') # = 56 byte
     def __init__(self, mode: str, host: str = '0.0.0.0', port: int = DEFAULT_PORT):
         self.mode = mode
         self.host = host
@@ -564,7 +565,7 @@ class SecureFileTransferNode:
             # 2. Loop di comunicazione
             while self.running:
                 # 2.1. Riceve header
-                header = self._recv_all(self.HEADER_PACKET_SIZE)
+                header = self._recv_all(HEADER_PACKET_SIZE)
                 if not header: break
 
                 # 2.2. Estrai la lunghezza del payload...
@@ -623,7 +624,7 @@ class SecureFileTransferNode:
             # Loop di comunicazione (preso da _handle_connection)
             while self.running:
                 # 2.1. Riceve header
-                header = self._recv_all(self.HEADER_PACKET_SIZE) # Usa la costante
+                header = self._recv_all(HEADER_PACKET_SIZE) # Usa la costante
                 if not header: break
 
                 # 2.2. Estrai la lunghezza del payload
