@@ -15,4 +15,5 @@ ricevuti/
 
 # File di test generati
 file.txt
-crypto_accelerator.sotests/*.pcapng
+crypto_accelerator.so
+tests/*.pcapng

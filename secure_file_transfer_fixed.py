@@ -2,7 +2,7 @@
 """
 Sistema di Trasferimento File Cifrato con Sicurezza Rafforzata
 Versione corretta con tutte le vulnerabilità risolte
-(Refactoring v2.4: Thread-safe connection handling)
+(Refactoring v2.5: Thread-safe state-per-thread)
 """
 
 import socket
@@ -523,9 +523,12 @@ class SecureFileTransferNode:
         self.host = host
         self.port = port
         self.identity = f"{mode}_{secrets.token_hex(4)}"
+        # 🟢 MODIFICA: Questo stato è ora usato SOLO dal CLIENT
+        # Il Server (handle_connection) crea le proprie istanze
         self.key_manager = SecureKeyManager(self.identity)
         self.received_messages: deque[str] = deque(maxlen=MAX_RECEIVED_MESSAGES) 
         self.protocol = SecureProtocol(self.key_manager, self.received_messages)
+        
         # Limite basso per mitigare scan DoS (es. nmap -sV)
         self.connection_limiter = RateLimiter(max_requests=10, window_seconds=60)
         
@@ -565,11 +568,16 @@ class SecureFileTransferNode:
     # 🟢 FINE REFACTORING THREAD-SAFE (Funzione #1)
 
     # 🟢 INIZIO REFACTORING THREAD-SAFE (Funzione #2)
-    def _perform_secure_handshake(self, sock: socket.socket, peer_addr: str) -> bool:
+    # 🟢 MODIFICA: Accetta key_manager opzionale, usa self.key_manager come fallback
+    def _perform_secure_handshake(self, sock: socket.socket, peer_addr: str, key_manager: Optional[SecureKeyManager] = None) -> bool:
         """Esegue l'handshake RSA-OAEP"""
+        
+        # Se key_manager non è fornito (es. Client), usa l'istanza 'self'
+        km = key_manager if key_manager else self.key_manager
+        
         try:
             # 1. Invia chiave pubblica e ricevi chiave pubblica del peer
-            public_key_pem = self.key_manager.get_public_key_pem()
+            public_key_pem = km.get_public_key_pem()
             sock.sendall(struct.pack('!I', len(public_key_pem)) + public_key_pem) # USA sock
 
             header_len = struct.calcsize('!I')
@@ -581,7 +589,7 @@ class SecureFileTransferNode:
 
             # 2. Scambia segreto (Iniziatore vs Risponditore)
             if self.mode == 'client':
-                encrypted_secret = self.key_manager.establish_shared_secret(peer_key_pem)
+                encrypted_secret = km.establish_shared_secret(peer_key_pem)
                 sock.sendall(struct.pack('!I', len(encrypted_secret)) + encrypted_secret) # USA sock
                 confirm_header = self._recv_all(sock, header_len) # PASSA sock
                 if not confirm_header: return False
@@ -594,7 +602,7 @@ class SecureFileTransferNode:
                 secret_len, = struct.unpack('!I', secret_header)
                 encrypted_secret = self._recv_all(sock, secret_len) # PASSA sock
                 if not encrypted_secret: return False
-                self.key_manager.decrypt_shared_secret(encrypted_secret)
+                km.decrypt_shared_secret(encrypted_secret)
                 confirm_msg = b"AUTH_OK"
                 sock.sendall(struct.pack('!I', len(confirm_msg)) + confirm_msg) # USA sock
 
@@ -608,8 +616,13 @@ class SecureFileTransferNode:
     # 🟢 FINE REFACTORING THREAD-SAFE (Funzione #2)
 
     # 🟢 INIZIO REFACTORING THREAD-SAFE (Funzione #3)
-    def _read_and_parse_packet(self, sock: socket.socket, client_id: str) -> Tuple[str, Any, int]:
+    # 🟢 MODIFICA: Accetta protocol opzionale, usa self.protocol come fallback
+    def _read_and_parse_packet(self, sock: socket.socket, client_id: str, protocol: Optional[SecureProtocol] = None) -> Tuple[str, Any, int]:
         """Helper per leggere un pacchetto completo (Header + Payload) e parsarlo"""
+        
+        # Se protocol non è fornito (es. Client), usa l'istanza 'self'
+        proto = protocol if protocol else self.protocol
+        
         # 1. Riceve header
         header = self._recv_all(sock, HEADER_PACKET_SIZE) # PASSA sock
         if not header:
@@ -635,7 +648,7 @@ class SecureFileTransferNode:
         
         # 4. Parsa (usa la logica di protocol.parse_packet)
         # Questo solleverà eccezioni in caso di fallimento decrypt/auth
-        pkt_type, payload, offset = self.protocol.parse_packet(full_packet, client_id)
+        pkt_type, payload, offset = proto.parse_packet(full_packet, client_id)
         return pkt_type, payload, offset
     # 🟢 FINE REFACTORING THREAD-SAFE (Funzione #3)
 
@@ -665,7 +678,20 @@ class SecureFileTransferNode:
         # Stato del trasferimento per questa connessione
         current_transfer: Dict[str, Any] = {}
         
+        # 🟢 MODIFICA: Dichiarazione variabili locali per lo stato
+        key_manager: Optional[SecureKeyManager] = None
+        protocol: Optional[SecureProtocol] = None
+        
         try:
+            # 🟢 INIZIO MODIFICA: Creazione stato locale per-thread
+            # Ogni thread ha il suo KeyManager, la sua coda Anti-Replay, e il suo Protocollo.
+            # Questo ISOLA le chiavi di sessione e risolve la race condition.
+            thread_identity = f"{self.identity}_{host}:{port}_{secrets.token_hex(2)}"
+            key_manager = SecureKeyManager(thread_identity)
+            received_messages_queue: deque[str] = deque(maxlen=MAX_RECEIVED_MESSAGES) 
+            protocol = SecureProtocol(key_manager, received_messages_queue)
+            # 🟢 FINE MODIFICA
+            
             # 0. Controllo limite connessioni (DoS - Circuit breaker)
             if self._connection_counter > MAX_GLOBAL_CONNECTIONS:
                 logger.error(f"Global connection limit reached ({MAX_GLOBAL_CONNECTIONS}). Closing connection from {host}.")
@@ -673,7 +699,8 @@ class SecureFileTransferNode:
                 return # 'finally' si occuperà del decremento
 
             # 1. Handshake e autenticazione
-            if not self._perform_secure_handshake(conn, host): # PASSA conn, host
+            # 🟢 MODIFICA: Passa il key_manager locale
+            if not self._perform_secure_handshake(conn, host, key_manager):
                 logger.error(f"[{thread_name}] Handshake failed. Closing connection.")
                 return # 'finally' si occuperà del decremento
             
@@ -681,7 +708,8 @@ class SecureFileTransferNode:
             while self.running:
                 
                 # 2.1. Leggi e parsa il prossimo pacchetto
-                pkt_type, payload, offset = self._read_and_parse_packet(conn, host) # PASSA conn, host
+                # 🟢 MODIFICA: Passa il protocol locale
+                pkt_type, payload, offset = self._read_and_parse_packet(conn, host, protocol)
 
                 # 2.2. Gestione Pacchetti JSON (Comandi)
                 if pkt_type == 'json':
@@ -691,14 +719,16 @@ class SecureFileTransferNode:
                     if msg_type == 'ping':
                         logger.info(f"[{thread_name}] Responding with PONG.")
                         try:
-                            pong_packet = self.protocol._create_json_packet('pong', {})
+                            # 🟢 MODIFICA: Usa il protocol locale
+                            pong_packet = protocol._create_json_packet('pong', {})
                             conn.sendall(pong_packet) # USA conn
                         except Exception as e:
                             logger.error(f"[{thread_name}] Failed to send PONG: {e}")
                             break # Interrompi se l'invio fallisce
                     
                     elif msg_type == 'file_header':
-                        filename = self.protocol.sanitize_filename(payload['payload']['filename'])
+                        # 🟢 MODIFICA: Usa il protocol locale
+                        filename = protocol.sanitize_filename(payload['payload']['filename'])
                         total_size = int(payload['payload']['total_size'])
                         safe_path = OUTPUT_DIR / filename
                         
@@ -722,7 +752,8 @@ class SecureFileTransferNode:
                         current_transfer = {'path': safe_path, 'handle': file_handle, 'total': total_size}
                         
                         # Invia ACK con l'offset
-                        ack_packet = self.protocol._create_json_packet(
+                        # 🟢 MODIFICA: Usa il protocol locale
+                        ack_packet = protocol._create_json_packet(
                             'file_resume_ack', 
                             {'filename': filename, 'offset': current_offset}
                         )
@@ -738,7 +769,8 @@ class SecureFileTransferNode:
                         current_transfer['handle'].close()
                         
                         # Invia ACK finale
-                        ack_packet = self.protocol._create_json_packet('file_ack', {'filename': filename})
+                        # 🟢 MODIFICA: Usa il protocol locale
+                        ack_packet = protocol._create_json_packet('file_ack', {'filename': filename})
                         conn.sendall(ack_packet) # USA conn
                         current_transfer = {}
 
@@ -777,6 +809,14 @@ class SecureFileTransferNode:
                     current_transfer['handle'].close()
                 except Exception as e:
                     logger.error(f"[{thread_name}] Failed to close file handle: {e}")
+            
+            # 🟢 MODIFICA: Pulizia sicura delle chiavi locali del thread
+            if key_manager:
+                if key_manager.current_key:
+                    _clear_memory(key_manager.current_key)
+                if key_manager.shared_secret:
+                    _clear_memory(key_manager.shared_secret)
+
             try:
                 conn.close() # USA conn
             except Exception:
@@ -846,7 +886,7 @@ class SecureFileTransferNode:
             self.peer_socket.connect((host, port))
             
             # 🟢 INIZIO REFACTORING THREAD-SAFE (Client)
-            # Handshake
+            # Handshake (NON passa istanze, usa il fallback a self.*)
             if not self._perform_secure_handshake(self.peer_socket, self.peer_address):
                 raise ConnectionRefusedError("Secure handshake failed.")
             # 🟢 FINE REFACTORING THREAD-SAFE (Client)
@@ -870,17 +910,20 @@ class SecureFileTransferNode:
         
         try:
             total_size = local_path.stat().st_size
+            # 🟢 MODIFICA: Usa self.protocol (logica Client)
             filename = self.protocol.sanitize_filename(local_path.name)
             
             # 1. Invia 'file_header'
             logger.info(f"Sending file header for {filename} ({total_size} bytes)")
             header_payload = {'filename': filename, 'total_size': total_size}
+            # 🟢 MODIFICA: Usa self.protocol (logica Client)
             header_packet = self.protocol._create_json_packet('file_header', header_payload)
             self.peer_socket.sendall(header_packet)
             self.transfer_stats['sent'] += 1
 
             # 2. Attendi ACK/Resume
             # 🟢 INIZIO REFACTORING THREAD-SAFE (Client)
+            # (NON passa istanze, usa il fallback a self.*)
             pkt_type, response, _ = self._read_and_parse_packet(self.peer_socket, self.peer_address)
             # 🟢 FINE REFACTORING THREAD-SAFE (Client)
             self.transfer_stats['received'] += 1
@@ -905,7 +948,8 @@ class SecureFileTransferNode:
                     chunk = f.read(BUFFER_SIZE) 
                     if not chunk:
                         break
-                        
+                    
+                    # 🟢 MODIFICA: Usa self.protocol (logica Client)
                     data_packet = self.protocol._create_data_packet(chunk, current_offset)
                     self.peer_socket.sendall(data_packet)
                     self.transfer_stats['sent'] += 1
@@ -925,6 +969,7 @@ class SecureFileTransferNode:
 
             # 4. Invia 'file_complete'
             logger.info(f"File send complete for {filename}. Sending 'file_complete' message.")
+            # 🟢 MODIFICA: Usa self.protocol (logica Client)
             complete_packet = self.protocol._create_json_packet(
                 'file_complete', 
                 {'filename': filename, 'total_size': total_size}
@@ -934,6 +979,7 @@ class SecureFileTransferNode:
             
             # 5. Attendi ACK finale
             # 🟢 INIZIO REFACTORING THREAD-SAFE (Client)
+            # (NON passa istanze, usa il fallback a self.*)
             pkt_type, response, _ = self._read_and_parse_packet(self.peer_socket, self.peer_address)
             # 🟢 FINE REFACTORING THREAD-SAFE (Client)
             self.transfer_stats['received'] += 1
@@ -962,6 +1008,8 @@ class SecureFileTransferNode:
                 pass
         
         # Pulizia chiavi correnti (Best-effort)
+        # 🟢 NOTA: Questo ora pulisce solo le chiavi del CLIENT
+        # Le chiavi del SERVER sono pulite nel 'finally' di _handle_connection
         if self.key_manager.current_key:
             _clear_memory(self.key_manager.current_key)
             self.key_manager.current_key = None
