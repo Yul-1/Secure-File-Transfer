@@ -2,6 +2,7 @@
 """
 Sistema di Trasferimento File Cifrato con Sicurezza Rafforzata
 Versione corretta con tutte le vulnerabilità risolte
+(Refactoring v2.1: Chunking, Resume, Callbacks)
 """
 
 import socket
@@ -30,24 +31,32 @@ from collections import deque
 from jsonschema import validate, ValidationError
 
 # Configurazione sicurezza
-BUFFER_SIZE = 4096
+BUFFER_SIZE = 4096  # Dimensione chunk per lettura file
 KEY_ROTATION_INTERVAL = 300
-MAX_FILE_SIZE = 100 * 1024 * 1024
+MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024 # Aumentato a 10GB (gestito da chunking)
 PROTOCOL_VERSION = "2.0"
 DEFAULT_PORT = 5555
-MAX_PACKET_SIZE = 10 * 1024 * 1024  # 10MB max per pacchetto
+MAX_PACKET_SIZE = 10 * 1024 * 1024  # 10MB max per pacchetto (JSON o Data chunk)
 SOCKET_TIMEOUT = 30
 MAX_FAILED_ATTEMPTS = 5
 RATE_LIMIT_WINDOW = 60  # secondi
 MAX_REQUESTS_PER_WINDOW = 100
 MAX_RECEIVED_MESSAGES = 1000
 MAX_GLOBAL_CONNECTIONS = 50
+OUTPUT_DIR = Path("ricevuti")
+
+# Tipi di payload
+PAYLOAD_TYPE_JSON = 0x01
+PAYLOAD_TYPE_DATA = 0x02
 
 # Schema JSON per validazione
 MESSAGE_SCHEMA = {
     "type": "object",
     "properties": {
-        "type": {"type": "string", "enum": ["file_transfer", "key_rotation", "ping", "pong", "auth"]},
+        "type": {"type": "string", "enum": [
+            "key_rotation", "ping", "pong", "auth",
+            "file_header", "file_resume_ack", "file_complete", "file_ack"
+        ]},
         "version": {"type": "string"},
         "timestamp": {"type": "string"},
         "payload": {"type": "object"},
@@ -56,7 +65,10 @@ MESSAGE_SCHEMA = {
     "required": ["type", "version", "timestamp", "payload"]
 }
 
-HEADER_PACKET_SIZE = struct.calcsize('!4sII16s12s16s') # = 56 byte
+# 🟢 MODIFICA: Nuovo Header (Aggiunti PayloadType (B) e Offset (Q))
+# Magic(4s), Versione(I), PayloadType(B), Offset(Q), PayloadLen(I), KeyID(16s), Nonce(12s), Tag(16s)
+HEADER_FORMAT = '!4sI B Q I 16s 12s 16s'
+HEADER_PACKET_SIZE = struct.calcsize(HEADER_FORMAT) # = 65 byte
 
 # Configurazione logging sicuro
 logging.basicConfig(
@@ -345,8 +357,8 @@ class SecureProtocol:
             logger.error(f"Decryption failed: {e}")
             raise
     
-    def create_packet(self, msg_type: str, payload: Dict[str, Any], sign: bool = True) -> bytes:
-        """Crea pacchetto con firma e cifratura"""
+    def _create_json_packet(self, msg_type: str, payload: Dict[str, Any], sign: bool = True) -> bytes:
+        """Crea pacchetto JSON (Controllo) con firma e cifratura"""
         message = {
             'type': msg_type,
             'version': PROTOCOL_VERSION,
@@ -376,11 +388,13 @@ class SecureProtocol:
         # Cifra
         ciphertext, key_id, nonce, tag = self.encrypt_data(json_data)
         
-        # Header sicuro
+        # Header sicuro (Tipo 0x01, Offset 0)
         header = struct.pack(
-            '!4sII16s12s16s',
+            HEADER_FORMAT,
             b'SFTP',
             2,  # Versione protocollo
+            PAYLOAD_TYPE_JSON,
+            0,  # Offset (non applicabile per JSON)
             len(ciphertext),
             key_id.encode('utf-8')[:16].ljust(16, b'\x00'),
             nonce,
@@ -389,19 +403,47 @@ class SecureProtocol:
         
         return header + ciphertext
     
-    def parse_packet(self, data: bytes, client_id: str) -> Optional[Dict[str, Any]]:
-        """Analizza pacchetto con rate limiting e controllo replay"""
+    def _create_data_packet(self, data: bytes, offset: int) -> bytes:
+        """Crea pacchetto Dati (Chunk) con cifratura"""
+        if len(data) > MAX_PACKET_SIZE:
+             raise ValueError(f"Data chunk too large: {len(data)} bytes")
+             
+        # Cifra
+        ciphertext, key_id, nonce, tag = self.encrypt_data(data)
+
+        # Header sicuro (Tipo 0x02, Offset specificato)
+        header = struct.pack(
+            HEADER_FORMAT,
+            b'SFTP',
+            2,  # Versione protocollo
+            PAYLOAD_TYPE_DATA,
+            offset,
+            len(ciphertext),
+            key_id.encode('utf-8')[:16].ljust(16, b'\x00'),
+            nonce,
+            tag
+        )
+        
+        return header + ciphertext
+
+    def parse_packet(self, data: bytes, client_id: str) -> Tuple[str, Any, int]:
+        """
+        Analizza pacchetto con rate limiting e controllo replay.
+        Restituisce (tipo_pacchetto, payload, offset)
+        'json' -> (payload è un dict)
+        'data' -> (payload sono bytes)
+        """
         # 🟢 CORREZIONE: Rate limiting (DoS)
         if not self.rate_limiter.is_allowed(client_id):
             logger.warning(f"Rate limit exceeded for {client_id}")
-            return None
+            raise ConnectionAbortedError(f"Rate limit exceeded for {client_id}")
         
-        if len(data) < 54:
+        if len(data) < HEADER_PACKET_SIZE:
             raise ValueError("Packet too short")
         
         # Parse header
-        magic, version, payload_len, key_id_raw, nonce, tag = struct.unpack(
-            '!4sII16s12s16s', data[:HEADER_PACKET_SIZE] 
+        magic, version, payload_type, offset, payload_len, key_id_raw, nonce, tag = struct.unpack(
+            HEADER_FORMAT, data[:HEADER_PACKET_SIZE] 
         )
         
         if magic != b'SFTP':
@@ -420,40 +462,49 @@ class SecureProtocol:
         ciphertext = data[HEADER_PACKET_SIZE : HEADER_PACKET_SIZE + payload_len]
         plaintext = self.decrypt_data(ciphertext, key_id, nonce, tag)
         
-        # Verifica replay: Hash del plaintext per ID messaggio
-        message_id = hashlib.sha256(plaintext).hexdigest()
-        if not self._check_and_add_message(message_id):
-            raise ValueError("Replay attack detected")
-        
-        # Parse JSON con validazione
-        try:
-            message = json.loads(plaintext.decode('utf-8'))
-            validate(instance=message, schema=MESSAGE_SCHEMA)
-        except (json.JSONDecodeError, ValidationError) as e:
-            logger.error(f"Invalid message format: {e}")
-            raise ValueError("Invalid message format")
-        
-        # Verifica firma se presente
-        if 'signature' in message:
-            signature = bytes.fromhex(message['signature'])
-            message_copy = message.copy()
-            del message_copy['signature']
-            message_bytes = json.dumps(message_copy, sort_keys=True).encode('utf-8')
-            if not self.key_manager.verify_signature(message_bytes, signature):
-                logger.error("Invalid message signature")
-                raise ValueError("Invalid signature")
+        # Gestione Tipi Payload
+        if payload_type == PAYLOAD_TYPE_JSON:
+            # Verifica replay: Hash del plaintext per ID messaggio
+            message_id = hashlib.sha256(plaintext).hexdigest()
+            if not self._check_and_add_message(message_id):
+                raise ValueError("Replay attack detected")
             
-        # Verifica timestamp (anti-replay)
-        try:
-            msg_time = datetime.fromisoformat(message['timestamp'])
-            # 5 minuti di tolleranza
-            if abs((datetime.now() - msg_time).total_seconds()) > 300:
-                logger.warning("Message timestamp too old or in future")
-                raise ValueError("Invalid timestamp")
-        except Exception:
-            raise ValueError("Invalid timestamp format")
+            # Parse JSON con validazione
+            try:
+                message = json.loads(plaintext.decode('utf-8'))
+                validate(instance=message, schema=MESSAGE_SCHEMA)
+            except (json.JSONDecodeError, ValidationError) as e:
+                logger.error(f"Invalid message format: {e}")
+                raise ValueError("Invalid message format")
+            
+            # Verifica firma se presente
+            if 'signature' in message:
+                signature = bytes.fromhex(message['signature'])
+                message_copy = message.copy()
+                del message_copy['signature']
+                message_bytes = json.dumps(message_copy, sort_keys=True).encode('utf-8')
+                if not self.key_manager.verify_signature(message_bytes, signature):
+                    logger.error("Invalid message signature")
+                    raise ValueError("Invalid signature")
+                
+            # Verifica timestamp (anti-replay)
+            try:
+                msg_time = datetime.fromisoformat(message['timestamp'])
+                # 5 minuti di tolleranza
+                if abs((datetime.now() - msg_time).total_seconds()) > 300:
+                    logger.warning("Message timestamp too old or in future")
+                    raise ValueError("Invalid timestamp")
+            except Exception:
+                raise ValueError("Invalid timestamp format")
+            
+            return ('json', message, offset)
         
-        return message
+        elif payload_type == PAYLOAD_TYPE_DATA:
+            # È un chunk di dati binari, non fare parsing/validazione JSON
+            return ('data', plaintext, offset)
+            
+        else:
+            raise ValueError(f"Unknown payload type: {payload_type}")
     
     def _check_and_add_message(self, message_id: str) -> bool:
         """Verifica replay e aggiunge ID messaggio al buffer FIFO (deque)"""
@@ -485,6 +536,10 @@ class SecureFileTransferNode:
         self.active_threads = []
         self._connection_counter = 0
         self._counter_lock = threading.Lock()
+
+        if self.mode == 'server':
+            OUTPUT_DIR.mkdir(exist_ok=True)
+            logger.info(f"Directory di output {OUTPUT_DIR.resolve()} assicurata.")
 
     def _perform_secure_handshake(self) -> bool:
         """Esegue l'handshake RSA-OAEP"""
@@ -544,8 +599,39 @@ class SecureFileTransferNode:
                 return None
         return data
 
+    def _read_and_parse_packet(self, client_id: str) -> Tuple[str, Any, int]:
+        """Helper per leggere un pacchetto completo (Header + Payload) e parsarlo"""
+        # 1. Riceve header
+        header = self._recv_all(HEADER_PACKET_SIZE)
+        if not header:
+            raise ConnectionAbortedError("Connection closed while reading header")
+
+        # 2. Estrai la lunghezza del payload...
+        magic, _, _, _, payload_len, *_ = struct.unpack(
+            HEADER_FORMAT, header
+        )
+        if magic != b'SFTP':
+            raise ValueError("Invalid magic number in _read_and_parse_packet")
+        
+        if payload_len > MAX_PACKET_SIZE:
+            logger.error(f"Payload too large in header: {payload_len}")
+            raise ValueError("Received too large payload size in header.")
+
+        # 3. Riceve payload
+        ciphertext = self._recv_all(payload_len)
+        if not ciphertext:
+            raise ConnectionAbortedError("Connection closed while reading payload")
+
+        full_packet = header + ciphertext
+        
+        # 4. Parsa (usa la logica di protocol.parse_packet)
+        # Questo solleverà eccezioni in caso di fallimento decrypt/auth
+        pkt_type, payload, offset = self.protocol.parse_packet(full_packet, client_id)
+        return pkt_type, payload, offset
+
+
     def _handle_connection(self, conn: socket.socket, addr: Tuple[str, int]):
-        """Gestisce il traffico cifrato in un thread separato"""
+        """Gestisce il traffico cifrato in un thread separato (LOGICA SERVER)"""
         with self._counter_lock:
             self._connection_counter += 1
         
@@ -556,6 +642,9 @@ class SecureFileTransferNode:
         self.peer_socket.settimeout(SOCKET_TIMEOUT)
         
         logger.info(f"[{thread_name}] Incoming connection from {host}:{port}")
+        
+        # Stato del trasferimento per questa connessione
+        current_transfer: Dict[str, Any] = {}
         
         try:
             # 0. Controllo limite connessioni (DoS - Circuit breaker)
@@ -568,113 +657,106 @@ class SecureFileTransferNode:
             if not self._perform_secure_handshake():
                 logger.error(f"[{thread_name}] Handshake failed. Closing connection.")
                 return
-
-            # Genera la chiave di sessione iniziale dopo l'handshake (e la ruota se presente)
-           # self.key_manager.generate_session_key()
             
-            # 2. Loop di comunicazione
+            # 2. Loop di comunicazione (State Machine)
             while self.running:
-                # 2.1. Riceve header
-                header = self._recv_all(HEADER_PACKET_SIZE)
-                if not header: break
-
-                # 2.2. Estrai la lunghezza del payload...
-                _, _, payload_len, *_ = struct.unpack('!4sII16s12s16s', header)
                 
-                if payload_len > MAX_PACKET_SIZE:
-                    logger.error("Received too large payload size in header.")
-                    break
+                # 2.1. Leggi e parsa il prossimo pacchetto
+                pkt_type, payload, offset = self._read_and_parse_packet(host)
 
-                ciphertext = self._recv_all(payload_len)
-                if not ciphertext: break
-
-                full_packet = header + ciphertext
-                
-                # 2.3. Parsa e decifra il pacchetto (incluse Rate Limit e Replay Check)
-                message = self.protocol.parse_packet(full_packet, host)
-
-                if message:
-                    logger.info(f"[{thread_name}] Received message type: {message['type']}")
+                # 2.2. Gestione Pacchetti JSON (Comandi)
+                if pkt_type == 'json':
+                    msg_type = payload.get('type')
+                    logger.info(f"[{thread_name}] Received JSON command: {msg_type}")
                     
-                    if message['type'] == 'ping':
+                    if msg_type == 'ping':
                         logger.info(f"[{thread_name}] Responding with PONG.")
                         try:
-                            pong_packet = self.protocol.create_packet('pong', {})
+                            pong_packet = self.protocol._create_json_packet('pong', {})
                             self.peer_socket.sendall(pong_packet)
                         except Exception as e:
                             logger.error(f"[{thread_name}] Failed to send PONG: {e}")
                             break # Interrompi se l'invio fallisce
-                    # Qui la logica di gestione file/rotazione chiavi
+                    
+                    elif msg_type == 'file_header':
+                        filename = self.protocol.sanitize_filename(payload['payload']['filename'])
+                        total_size = int(payload['payload']['total_size'])
+                        safe_path = OUTPUT_DIR / filename
+                        
+                        current_offset = 0
+                        mode = 'wb'
+                        
+                        # Logica di Resume
+                        if safe_path.exists():
+                            current_offset = safe_path.stat().st_size
+                            if current_offset < total_size:
+                                logger.info(f"[{thread_name}] Resuming {filename} from offset {current_offset}")
+                                mode = 'ab' # Append
+                            elif current_offset == total_size:
+                                logger.info(f"[{thread_name}] File {filename} already complete. Overwriting.")
+                                current_offset = 0
+                            else: # File locale corrotto/più grande
+                                logger.warning(f"[{thread_name}] Local file {filename} is larger than expected ({current_offset} > {total_size}). Overwriting.")
+                                current_offset = 0
+                        
+                        file_handle = safe_path.open(mode)
+                        current_transfer = {'path': safe_path, 'handle': file_handle, 'total': total_size}
+                        
+                        # Invia ACK con l'offset
+                        ack_packet = self.protocol._create_json_packet(
+                            'file_resume_ack', 
+                            {'filename': filename, 'offset': current_offset}
+                        )
+                        self.peer_socket.sendall(ack_packet)
+
+                    elif msg_type == 'file_complete':
+                        if not current_transfer:
+                            logger.warning(f"[{thread_name}] Received 'file_complete' without active transfer.")
+                            continue
+                        
+                        filename = payload['payload']['filename']
+                        logger.info(f"[{thread_name}] Transfer complete for {filename}")
+                        current_transfer['handle'].close()
+                        
+                        # Invia ACK finale
+                        ack_packet = self.protocol._create_json_packet('file_ack', {'filename': filename})
+                        self.peer_socket.sendall(ack_packet)
+                        current_transfer = {}
+
+                # 2.3. Gestione Pacchetti DATA (Chunks)
+                elif pkt_type == 'data':
+                    if not current_transfer:
+                        logger.warning(f"[{thread_name}] Received data chunk without active transfer. Discarding.")
+                        continue
+                        
+                    handle = current_transfer['handle']
+                    
+                    # Scrivi nel file all'offset corretto
+                    handle.seek(offset)
+                    handle.write(payload)
+                    
+                    logger.debug(f"[{thread_name}] Wrote chunk to {current_transfer['path'].name} at offset {offset}. Total {offset + len(payload)} / {current_transfer['total']}")
+
 
             logger.info(f"[{thread_name}] Connection closed gracefully.")
 
-        except (ValueError, Exception) as e:
+        except (ValueError, ConnectionAbortedError, Exception) as e:
             logger.error(f"[{thread_name}] Protocol or connection error: {e}", exc_info=False)
             self.transfer_stats['errors'] += 1
         finally:
+            # Assicurati che l'handle del file sia chiuso
+            if current_transfer.get('handle'):
+                try:
+                    current_transfer['handle'].close()
+                except Exception as e:
+                    logger.error(f"[{thread_name}] Failed to close file handle: {e}")
             try:
                 self.peer_socket.close()
             except Exception:
                 pass
             with self._counter_lock:
                 self._connection_counter -= 1
-    def _client_message_loop(self):
-        """Gestisce il traffico cifrato per il client (dopo l'handshake)"""
-        thread_name = threading.current_thread().name
-        host = self.peer_address
-        
-        try:
-            # Genera la chiave di sessione iniziale dopo l'handshake
-            #self.key_manager.generate_session_key()
-            
-            logger.info(f"[{thread_name}] Sending initial PING to server...")
-            ping_packet = self.protocol.create_packet('ping', {})
-            self.peer_socket.sendall(ping_packet)
-            
-            # Loop di comunicazione (preso da _handle_connection)
-            while self.running:
-                # 2.1. Riceve header
-                header = self._recv_all(HEADER_PACKET_SIZE) # Usa la costante
-                if not header: break
-
-                # 2.2. Estrai la lunghezza del payload
-                _, _, payload_len, *_ = struct.unpack('!4sII16s12s16s', header)
-                
-                if payload_len > MAX_PACKET_SIZE:
-                    logger.error("Received too large payload size in header.")
-                    break
-
-                ciphertext = self._recv_all(payload_len)
-                if not ciphertext: break
-
-                full_packet = header + ciphertext
-                
-                # 2.3. Parsa e decifra il pacchetto
-                message = self.protocol.parse_packet(full_packet, host)
-
-                if message:
-                    logger.info(f"[{thread_name}] Received message type: {message['type']}")
-                    
-                    if message['type'] == 'pong':
-                        logger.info(f"[{thread_name}] Server responded with PONG. Connection active.")
-                        # In un'app reale, qui potremmo inviare il file
-                        # Per ora, chiudiamo la connessione dopo il test
-                        self.running = False 
-                    # ... (Futura logica client qui)
-
-            logger.info(f"[{thread_name}] Connection closed gracefully.")
-
-        except (ValueError, Exception) as e:
-            # Evitiamo di loggare "Handshake failed" qui
-            if "Connection reset by peer" not in str(e) and self.running:
-                logger.error(f"[{thread_name}] Protocol or connection error: {e}", exc_info=False)
-            self.transfer_stats['errors'] += 1
-        finally:
-            try:
-                self.peer_socket.close()
-            except Exception:
-                pass
-
+    
     def start_server(self):
         """Avvia server sicuro"""
         self.running = True
@@ -684,6 +766,7 @@ class SecureFileTransferNode:
         self.socket.bind((self.host, self.port))
         self.socket.listen(5) # Backlog limitato
         logger.info(f"Server listening on {self.host}:{self.port}...")
+        logger.info(f"File verranno salvati in: {OUTPUT_DIR.resolve()}")
 
         try:
             while self.running:
@@ -714,7 +797,7 @@ class SecureFileTransferNode:
             self.shutdown()
 
     def connect_to_server(self, host: str, port: int):
-        """Connette al server in modo sicuro"""
+        """Connette al server in modo sicuro ed esegue l'handshake"""
         self.running = True
         self.peer_address = host
         self.peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -728,13 +811,97 @@ class SecureFileTransferNode:
             if not self._perform_secure_handshake():
                 raise ConnectionRefusedError("Secure handshake failed.")
                 
-            # Avvia la gestione della connessione in un thread
-            self._client_message_loop()
+            logger.info("Connection successful. Ready to send files.")
+            # Non avvia un loop, resta in attesa di comandi (es. send_file)
 
         except (socket.error, ConnectionRefusedError) as e:
             logger.error(f"Connection failed: {e}")
-        finally:
-            self.shutdown()
+            self.shutdown() # Chiude se l'handshake fallisce
+            raise # Rilancia l'eccezione
+
+    def send_file(self, local_filepath: str, progress_callback: Optional[callable] = None):
+        """Invia un file al server connesso (LOGICA CLIENT)"""
+        if not self.running or not self.peer_socket:
+            raise ConnectionError("Not connected to server.")
+        
+        local_path = Path(local_filepath)
+        if not local_path.exists() or not local_path.is_file():
+            raise FileNotFoundError(f"File not found: {local_filepath}")
+        
+        try:
+            total_size = local_path.stat().st_size
+            filename = self.protocol.sanitize_filename(local_path.name)
+            
+            # 1. Invia 'file_header'
+            logger.info(f"Sending file header for {filename} ({total_size} bytes)")
+            header_payload = {'filename': filename, 'total_size': total_size}
+            header_packet = self.protocol._create_json_packet('file_header', header_payload)
+            self.peer_socket.sendall(header_packet)
+            self.transfer_stats['sent'] += 1
+
+            # 2. Attendi ACK/Resume
+            pkt_type, response, _ = self._read_and_parse_packet(self.peer_address)
+            self.transfer_stats['received'] += 1
+            
+            if pkt_type != 'json' or response.get('type') != 'file_resume_ack':
+                raise Exception(f"Server did not acknowledge file header. Got: {response.get('type')}")
+                
+            start_offset = response['payload'].get('offset', 0)
+            if start_offset > total_size:
+                logger.error(f"Server offset {start_offset} is larger than file size {total_size}. Aborting.")
+                raise Exception("Invalid resume offset from server.")
+            
+            logger.info(f"Server ACK. Starting upload from offset: {start_offset}")
+
+            # 3. Invia Chunks
+            with local_path.open('rb') as f:
+                f.seek(start_offset)
+                current_offset = start_offset
+                
+                while self.running and current_offset < total_size:
+                    # Legge un chunk
+                    chunk = f.read(BUFFER_SIZE) 
+                    if not chunk:
+                        break
+                        
+                    data_packet = self.protocol._create_data_packet(chunk, current_offset)
+                    self.peer_socket.sendall(data_packet)
+                    self.transfer_stats['sent'] += 1
+                    
+                    current_offset += len(chunk)
+                    
+                    if progress_callback:
+                        try:
+                            # Esegui il callback
+                            progress_callback(filename, current_offset, total_size)
+                        except Exception as cb_e:
+                            logger.warning(f"Progress callback failed: {cb_e}")
+                
+            if not self.running:
+                logger.warning("Transfer interrupted during chunk sending.")
+                return
+
+            # 4. Invia 'file_complete'
+            logger.info(f"File send complete for {filename}. Sending 'file_complete' message.")
+            complete_packet = self.protocol._create_json_packet(
+                'file_complete', 
+                {'filename': filename, 'total_size': total_size}
+            )
+            self.peer_socket.sendall(complete_packet)
+            self.transfer_stats['sent'] += 1
+            
+            # 5. Attendi ACK finale
+            pkt_type, response, _ = self._read_and_parse_packet(self.peer_address)
+            self.transfer_stats['received'] += 1
+            if pkt_type == 'json' and response.get('type') == 'file_ack':
+                logger.info(f"Server acknowledged file_complete for {filename}.")
+            else:
+                logger.warning(f"Did not receive final file_ack. Got: {response.get('type')}")
+
+        except Exception as e:
+            logger.error(f"Error during send_file: {e}", exc_info=True)
+            self.transfer_stats['errors'] += 1
+            raise # Rilancia l'eccezione
 
     def shutdown(self):
         """Spegnimento sicuro"""
@@ -760,12 +927,21 @@ class SecureFileTransferNode:
             
         logger.info("Node shut down.")
 
+# Callback di esempio per il progresso
+def simple_progress_callback(filename: str, current_bytes: int, total_bytes: int):
+    """Callback di progresso da passare a send_file"""
+    percent = (current_bytes / total_bytes) * 100
+    print(f"\rProgresso: {filename} - {current_bytes}/{total_bytes} bytes ({percent:.2f}%)", end="")
+    if current_bytes == total_bytes:
+        print("\nTrasferimento completato.")
+
 def main():
-    parser = argparse.ArgumentParser(description="Secure File Transfer Node")
+    parser = argparse.ArgumentParser(description="Secure File Transfer Node (v2.1)")
     parser.add_argument('--mode', choices=['server', 'client'], required=True, help='Run as server or client')
     parser.add_argument('--host', type=str, default='0.0.0.0', help='Binding host IP for server')
     parser.add_argument('--port', type=int, default=DEFAULT_PORT, help='Port number')
     parser.add_argument('--connect', type=str, help='Server IP:Port to connect (client mode)')
+    parser.add_argument('--file', type=str, help='Path to the file to send (client mode)')
     
     args = parser.parse_args()
     
@@ -775,8 +951,12 @@ def main():
         if args.mode == 'server':
             node.start_server()
         else:
+            # Modalità Client
             if not args.connect:
                 print("[ERROR] Specify --connect SERVER_IP:PORT for client mode")
+                return
+            if not args.file:
+                print("[ERROR] Specify --file LOCAL_FILE_PATH for client mode")
                 return
             
             server_host = args.connect
@@ -803,7 +983,14 @@ def main():
                 print(f"[ERROR] Cannot resolve host: {server_host}")
                 return
             
-            node.connect_to_server(server_host, server_port)
+            # Esegui la logica client
+            try:
+                node.connect_to_server(server_host, server_port)
+                node.send_file(args.file, progress_callback=simple_progress_callback)
+            except (ConnectionRefusedError, FileNotFoundError, Exception) as e:
+                logger.error(f"Client operation failed: {e}")
+            finally:
+                node.shutdown()
             
     except KeyboardInterrupt:
         logger.info("User interrupt, shutting down.")
