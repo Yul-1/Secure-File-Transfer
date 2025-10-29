@@ -492,7 +492,7 @@ Questo progetto è distribuito sotto licenza MIT. Vedi il file [LICENSE](LICENSE
 ## 📞 Contatti
 
 - **GitHub**: [@Yul-1](https://github.com/Yul-1)
-- **Email**: [contatto@aegistransfer.dev](mailto:contatto@aegistransfer.dev)
+- **Email**: 
 - **Issues**: [GitHub Issues](https://github.com/Yul-1/SFT/issues)
 
 ---
