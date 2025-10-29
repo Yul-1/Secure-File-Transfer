@@ -582,18 +582,18 @@ class SecureFileTransferNode:
             self.transfer_stats['auth_failures'] += 1
             return False
 
-    def _recv_all(self, length: int) -> Optional[bytes]:
+def _recv_all(self, sock: socket.socket, length: int) -> Optional[bytes]:
         """Riceve esattamente N bytes o None in caso di errore/timeout"""
         data = b''
         while len(data) < length:
             try:
-                packet = self.peer_socket.recv(length - len(data))
+                packet = sock.recv(length - len(data)) # USA sock
                 if not packet:
                     # Ritorna None se lo socket è chiuso (EOF)
                     return None
                 data += packet
             except socket.timeout:
-                logger.warning(f"Socket timeout during reception from {self.peer_address}")
+                logger.warning(f"Socket timeout during reception") # Rimosso peer_address per semplicità
                 return None
             except Exception as e:
                 logger.error(f"Error receiving data: {e}")
