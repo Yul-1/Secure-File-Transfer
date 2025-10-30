@@ -254,19 +254,24 @@ def test_sha256_hash_safe_bounds():
 
 def test_sha256_hash_safe_bounds_max():
     """Verifica che l'hash fallisca se i dati > MAX_BUFFER_SIZE."""
-    # 🟢 FIX (Analisi #20):
-    # Verifichiamo che il coverage per la funzione C 'validate_buffer_size'
-    # sia già gestito dal test 'test_generate_random_bounds'
-    # (specificamente la parte 'MAX_BUFFER_SIZE + 1').
+    # 🟢 FIX (Analisi #20): Implementazione del test bounds superiore
     
-    # Poiché 'sha256_hash' e 'generate_secure_random'
-    # usano la STESSA funzione di validazione C (validate_buffer_size),
-    # testare uno è sufficiente a coprire la logica C.
+    # Crea un buffer leggermente oltre il limite
+    # (Python ottimizza b'\x00' * N, quindi non è costoso)
+    oversized_data = b'\x00' * (MAX_BUFFER_SIZE + 1)
     
-    # Tentare di testare 'sha256_hash(dati_grandi)' richiederebbe 
-    # l'allocazione di >10MB di memoria, cosa che evitiamo
-    # negli unit test per efficienza.
-    pass 
+    # Verifica che il modulo C rifiuti input troppo grandi
+    with pytest.raises(ValueError, match="Invalid data for hashing size"):
+        crypto_c.sha256_hash(oversized_data)
+    
+    # Verifica che il limite esatto funzioni (edge case)
+    max_size_data = b'\x00' * MAX_BUFFER_SIZE
+    try:
+        result = crypto_c.sha256_hash(max_size_data)
+        assert len(result) == 32  # SHA-256 produce sempre 32 bytes
+        print(f"✓ SHA256 con MAX_BUFFER_SIZE ({MAX_BUFFER_SIZE} bytes): OK")
+    except Exception as e:
+        pytest.fail(f"SHA256 dovrebbe accettare MAX_BUFFER_SIZE: {e}") 
 
 # 5. Test compare_digest_safe
 def test_compare_digest_safe_identical():

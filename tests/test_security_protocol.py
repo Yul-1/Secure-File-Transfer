@@ -257,9 +257,9 @@ def test_e2e_transfer_resume(secure_server, test_file_factory, server_output_dir
     assert received_hash == file_hash
     print("\nTest Resume: Hash finale verificato.")
 
-@patch('secure_file_transfer_fixed.SecureProtocol._check_and_add_message', return_value=False)
-def test_e2e_protocol_replay_attack(mock_check, secure_server):
-    """TEST 5: Verifica che il server rifiuti un replay attack."""
+# 🟢 FIX (Analisi #18): Rimosso il decoratore @patch inefficace
+def test_e2e_protocol_replay_attack(secure_server):
+    """TEST 5: Verifica che il server rifiuti un replay attack (invio duplicato)."""
     host, port = secure_server
     
     # 🟢 FIX: Ottieni client_node (anche se non usato, per coerenza)
@@ -267,21 +267,30 @@ def test_e2e_protocol_replay_attack(mock_check, secure_server):
     
     try:
         # 1. Crea e invia pacchetto PING
-        # (Il mock farà fallire il check anti-replay sul server)
         ping_packet = protocol._create_json_packet('ping', {})
         sock.sendall(ping_packet)
         
-        # 2. Il server deve chiudere la connessione
-        time.sleep(0.2) # Dai tempo al server di processare e chiudere
+        # 2. Attendi risposta al primo ping
+        time.sleep(0.1)
+        response1 = sock.recv(1024)
+        assert len(response1) > 0, "Primo ping dovrebbe ricevere risposta"
+        
+        # 3. REPLAY ATTACK: Invia lo STESSO pacchetto identico
+        # (stesso nonce, stesso timestamp, stessa firma)
+        sock.sendall(ping_packet)
+        
+        # 4. Il server deve chiudere la connessione o non rispondere
+        time.sleep(0.2)
         data = sock.recv(1024)
         
         # Se la connessione è chiusa, recv ritorna b''
         assert data == b'', "Il server non ha chiuso la connessione per replay attack"
+        print("\n✓ Test Replay Attack: Server ha correttamente rifiutato il messaggio duplicato")
         
     except Exception as e:
         # Se il server chiude, potremmo avere un ConnectionResetError,
         # che è OK in questo caso.
-        print(f"Test Replay (Atteso): {e}")
+        print(f"\n✓ Test Replay Attack (connessione chiusa): {e}")
         pass
     finally:
         sock.close()

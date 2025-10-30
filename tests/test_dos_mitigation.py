@@ -101,6 +101,12 @@ def test_rate_limit_single_ip(running_server, caplog):
 
     for t in threads:
         t.join(timeout=3.0)
+    
+    # 🟢 FIX (Analisi #13): Sleep per permettere flush log
+    # Con 15 thread concorrenti che scrivono log, caplog potrebbe
+    # non catturare tutti i messaggi istantaneamente. Diamo tempo
+    # al logging handler di fare flush.
+    time.sleep(0.15)
 
     # Verifica i log per il rate limiting
     log_messages = [record.message for record in caplog.records 

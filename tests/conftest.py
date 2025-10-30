@@ -18,17 +18,39 @@ from secure_file_transfer_fixed import SecureFileTransferNode, OUTPUT_DIR, DEFAU
 
 @pytest.fixture(scope="session")
 def server_output_dir(tmp_path_factory):
-    """Crea una directory di output temporanea per i file del server."""
+    """Crea una directory di output temporanea per i file del server.
+    
+    🟢 FIX (Analisi #17): Monkeypatch Pattern Robusto
+    
+    PROBLEMA:
+    `monkeypatch.setattr('module.VARIABLE', value)` (string-based) 
+    NON funziona se un modulo ha già fatto `from module import VARIABLE`.
+    
+    SOLUZIONE IMPLEMENTATA:
+    1. Importiamo il MODULO direttamente: `import secure_file_transfer_fixed`
+    2. Patchiamo l'attributo del modulo: `mp.setattr(module, 'ATTR', value)`
+    3. I test importano DOPO che conftest ha applicato il patch
+    
+    Questo funziona perché:
+    - conftest.py viene caricato PRIMA dei test
+    - Il patch modifica l'attributo del modulo PRIMA che i test lo importino
+    - `from secure_file_transfer_fixed import OUTPUT_DIR` ottiene il valore patchato
+    
+    Pattern da EVITARE:
+    ❌ mp.setattr('secure_file_transfer_fixed.OUTPUT_DIR', value)  # String-based
+    
+    Pattern CORRETTO:
+    ✅ import module; mp.setattr(module, 'OUTPUT_DIR', value)  # Object-based
+    """
     server_output_dir = tmp_path_factory.mktemp("server_files")
     
-    # 🟢 FIX (Analisi #17 / ScopeMismatch):
     # Non possiamo richiedere 'monkeypatch' (function scope)
     # in una fixture 'session' scope.
     # Creiamo manualmente un MonkeyPatch session-scoped.
     mp = MonkeyPatch()
     
     import secure_file_transfer_fixed
-    # Applica il patch
+    # Applica il patch (object-based, non string-based)
     mp.setattr(secure_file_transfer_fixed, 'OUTPUT_DIR', server_output_dir)
     
     yield server_output_dir
