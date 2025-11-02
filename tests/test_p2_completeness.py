@@ -3,6 +3,7 @@
 Suite di Test P2 (Completezza) per AegisTransfer
 Team: _team controllo
 (Versione 1.2: Iniezione 'server_output_dir')
+(Versione 1.3: Fix Deadlock in P2.2)
 """
 
 import pytest
@@ -109,6 +110,7 @@ def test_p2_os_signal_handling(capfd: pytest.CaptureFixture):
     """
     P2.2: Verifica che il server si spenga correttamente
     (graceful shutdown) ricevendo un segnale SIGINT (Ctrl+C).
+    (FIX 1.3: Corretto deadlock su stdout/stderr)
     """
     print(f"\n--- test_p2_os_signal_handling ---")
     
@@ -123,27 +125,44 @@ def test_p2_os_signal_handling(capfd: pytest.CaptureFixture):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        # Aggiunto 'bufsize=1' per line buffering, aiuta a ottenere output prima
+        bufsize=1, 
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
     )
     
     try:
         timeout = time.time() + 5
         server_ready = False
+
+        # --- INIZIO BLOCCO CORRETTO ---
+        # Leggiamo SOLO da stderr, dove ci aspettiamo i log.
+        # Questo evita il deadlock della lettura sequenziale bloccante
+        # di stderr e stdout.
+        
+        print("In attesa del server (max 5s)...")
         while time.time() < timeout:
+            # NOTA: readline() è ancora bloccante, ma ora è l'unica
+            # chiamata.
             line = server_process.stderr.readline() 
+
             if "Server listening on" in line:
-                print("Server rilevato in ascolto.")
-                server_ready = True
-                break
-            line_out = server_process.stdout.readline()
-            if "Server listening on" in line_out:
-                print("Server rilevato in ascolto (stdout).")
+                print("Server rilevato in ascolto (stderr).")
                 server_ready = True
                 break
 
-            time.sleep(0.05)
+            # Se 'line' è vuota E il processo ha un codice di uscita (poll() != None),
+            # significa che il server è morto prematuramente (crash).
+            if line == '' and server_process.poll() is not None:
+                print("Server terminato inaspettatamente durante l'avvio.")
+                break
             
-        assert server_ready, "Il server non è partito entro il timeout"
+            # Piccolo sleep per evitare spin-loop se il processo muore
+            # e readline() restituisce '' continuamente.
+            time.sleep(0.01) 
+        
+        # --- FINE BLOCCO CORRETTO ---
+            
+        assert server_ready, "Il server non è partito entro il timeout (o è crashato)"
         
         print("Invio segnale SIGINT (Ctrl+C)...")
         if sys.platform == "win32":
@@ -151,9 +170,16 @@ def test_p2_os_signal_handling(capfd: pytest.CaptureFixture):
         else:
             server_process.send_signal(signal.SIGINT)
             
-        server_process.wait(timeout=5)
-        
-        stdout, stderr = server_process.communicate()
+        # Attendi che il processo termini dopo il segnale
+        # Diamo 5s per lo shutdown graceful
+        try:
+            stdout, stderr = server_process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            print("Server non ha terminato entro 5s dal SIGINT. Terminazione forzata.")
+            server_process.kill()
+            stdout, stderr = server_process.communicate()
+            assert False, "Shutdown graceful fallito (timeout)"
+
         
         print("\n--- Output Server (stderr) ---")
         print(stderr)
@@ -168,8 +194,9 @@ def test_p2_os_signal_handling(capfd: pytest.CaptureFixture):
         print("Test P2.2 (Gestione Segnali OS) completato: Shutdown graceful verificato.")
 
     finally:
+        # Assicurati che il processo sia morto in ogni caso
         if server_process.poll() is None:
-            print("Processo server ancora attivo. Terminazione forzata.")
+            print("Processo server ancora attivo (finally). Terminazione forzata.")
             server_process.terminate()
             server_process.wait(2)
             server_process.kill()
