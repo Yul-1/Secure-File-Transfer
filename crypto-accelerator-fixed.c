@@ -1,10 +1,10 @@
-// crypto_accelerator_fixed.c
+// crypto_accelerator_corrected.c
 // Modulo C sicuro per accelerazione crittografica
+// VERSIONE CORRETTA - Tutti i bug critici risolti
 // Compilare con:
-// gcc -shared -fPIC -O3 -march=native -D_FORTIFY_SOURCE=2 -fstack-protector-strong crypto_accelerator_fixed.c -o crypto_accelerator.so -lcrypto
+// gcc -shared -fPIC -O3 -march=native -D_FORTIFY_SOURCE=2 -fstack-protector-strong crypto_accelerator_corrected.c -o crypto_accelerator.so -lcrypto
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
-// 🟢 FIX (Analisi #1)
 #include <openssl/evp.h>
 #include <openssl/aes.h>
 #include <openssl/rand.h>
@@ -15,7 +15,7 @@
 #include <limits.h>
 #include <stdlib.h>
 
-// 🟢 CORREZIONE: Implementazione portabile di explicit_bzero (se non disponibile)
+// Implementazione portabile di explicit_bzero (se non disponibile)
 #if defined(__GLIBC__) && ( ( __GLIBC__ > 2 ) || ( __GLIBC__ == 2 && __GLIBC_MINOR__ >= 25 ) )
     #define secure_memzero(ptr, size) explicit_bzero(ptr, size)
 #elif defined(_MSC_VER)
@@ -33,11 +33,10 @@
 #define CHECK_SSL_SUCCESS(ret) if (ret <= 0) { PyErr_SetString(PyExc_ValueError, "OpenSSL operation failed"); goto cleanup; }
 
 // Definizioni costanti (per coerenza con il wrapper)
-// 🟢 FIX: 0 è una lunghezza valida per encrypt/hash
 #define MIN_PY_BUFFER_SIZE 0
 #define MAX_PY_BUFFER_SIZE (10 * 1024 * 1024)
 
-// 🟢 CORREZIONE: Funzione helper per validazione
+// Funzione helper per validazione
 static int validate_buffer_size(Py_ssize_t size, Py_ssize_t min, Py_ssize_t max, const char* name) {
     if (size > max || size < min) {
         PyErr_Format(PyExc_ValueError, "Invalid %s size: %zd. Must be between %zd and %zd bytes.",
@@ -78,11 +77,16 @@ static PyObject* aes_gcm_encrypt_safe(PyObject* self, PyObject* args) {
 
     // 2. Validazione rigorosa dimensioni
     if (key_len != 32 || iv_len != 12) {
-        PyErr_SetString(PyExc_ValueError, "Invalid key, IV size or plaintext length");
+        PyErr_SetString(PyExc_ValueError, "Invalid key or IV size");
         return NULL;
     }
-    // 🟢 FIX: Usa MIN_PY_BUFFER_SIZE (ora 0)
     if (!validate_buffer_size(plaintext_len, MIN_PY_BUFFER_SIZE, MAX_PY_BUFFER_SIZE, "plaintext")) {
+        return NULL;
+    }
+    
+    // ✅ FIX: Controllo esplicito per integer overflow prima del cast a int
+    if (plaintext_len > INT_MAX) {
+        PyErr_SetString(PyExc_ValueError, "Plaintext too large for OpenSSL (max 2GB)");
         return NULL;
     }
 
@@ -103,7 +107,6 @@ static PyObject* aes_gcm_encrypt_safe(PyObject* self, PyObject* args) {
     CHECK_SSL_SUCCESS(EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv));
 
     // 6. Cifra
-    // (GCM non ha AAD qui)
     CHECK_SSL_SUCCESS(EVP_EncryptUpdate(ctx, ciphertext_buf, &len, plaintext, (int)plaintext_len));
     ciphertext_len = len;
 
@@ -115,11 +118,32 @@ static PyObject* aes_gcm_encrypt_safe(PyObject* self, PyObject* args) {
     CHECK_SSL_SUCCESS(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag_buf));
 
     // 9. Crea oggetti PyBytes (copia)
+    // ✅ FIX CRITICO: Aggiungi NULL checks dopo ogni allocazione
     ciphertext_obj = PyBytes_FromStringAndSize((char*)ciphertext_buf, ciphertext_len);
+    if (!ciphertext_obj) {
+        PyErr_SetString(PyExc_MemoryError, "Failed to create ciphertext bytes object");
+        goto cleanup;
+    }
+    
     tag_obj = PyBytes_FromStringAndSize((char*)tag_buf, 16);
+    if (!tag_obj) {
+        PyErr_SetString(PyExc_MemoryError, "Failed to create tag bytes object");
+        Py_DECREF(ciphertext_obj);  // Pulisci l'oggetto già creato
+        ciphertext_obj = NULL;
+        goto cleanup;
+    }
     
     // 10. Crea Tupla risultato
     result_tuple = PyTuple_Pack(2, ciphertext_obj, tag_obj);
+    if (!result_tuple) {
+        PyErr_SetString(PyExc_MemoryError, "Failed to create result tuple");
+        goto cleanup;
+    }
+    
+    // ✅ FIX CRITICO: Decrementa i riferimenti SOLO dopo il successo di PyTuple_Pack
+    // PyTuple_Pack incrementa il refcount, quindi dobbiamo decrementare i nostri riferimenti locali
+    Py_DECREF(ciphertext_obj);
+    Py_DECREF(tag_obj);
 
 cleanup:
     // Pulizia sicura
@@ -133,11 +157,14 @@ cleanup:
         PyMem_Free(tag_buf);
     }
     
-    // Pulisci ref (anche se 0, Py_XDECREF è sicuro)
-    Py_XDECREF(ciphertext_obj);
-    Py_XDECREF(tag_obj);
+    // ✅ FIX: Se la tupla non è stata creata, dobbiamo pulire gli oggetti parzialmente creati
+    // Ma SOLO se non abbiamo già fatto DECREF sopra (cioè se result_tuple è NULL)
+    if (result_tuple == NULL) {
+        Py_XDECREF(ciphertext_obj);
+        Py_XDECREF(tag_obj);
+    }
     
-    // 🟢 FIX (Analisi #16): NON puliamo key, iv (buffer Python)
+    // NON puliamo key, iv (buffer Python immutabili)
 
     return result_tuple; // Può essere NULL in caso di errore
 }
@@ -171,13 +198,17 @@ static PyObject* aes_gcm_decrypt_safe(PyObject* self, PyObject* args) {
         PyErr_SetString(PyExc_ValueError, "Invalid key, IV or tag size");
         return NULL;
     }
-    // 🟢 FIX: Usa MIN_PY_BUFFER_SIZE (ora 0)
     if (!validate_buffer_size(ciphertext_len, MIN_PY_BUFFER_SIZE, MAX_PY_BUFFER_SIZE, "ciphertext")) {
+        return NULL;
+    }
+    
+    // ✅ FIX: Controllo esplicito per integer overflow prima del cast a int
+    if (ciphertext_len > INT_MAX) {
+        PyErr_SetString(PyExc_ValueError, "Ciphertext too large for OpenSSL (max 2GB)");
         return NULL;
     }
 
     // 3. Allocazione buffer
-    // (Dimensione massima = ciphertext_len + block_size)
     plaintext_buf = (unsigned char*)PyMem_Malloc(ciphertext_len + EVP_MAX_BLOCK_LENGTH);
     if (plaintext_buf == NULL) {
         PyErr_SetString(PyExc_MemoryError, "Failed to allocate memory");
@@ -200,8 +231,6 @@ static PyObject* aes_gcm_decrypt_safe(PyObject* self, PyObject* args) {
     CHECK_SSL_SUCCESS(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, (int)tag_len, (void*)tag));
 
     // 8. Finalizza (Verifica autenticazione)
-    // Se il tag è errato, questa chiamata fallisce (ritorna <= 0)
-    // e solleva l'errore in CHECK_SSL_SUCCESS
     if (EVP_DecryptFinal_ex(ctx, plaintext_buf + len, &len) <= 0) {
         PyErr_SetString(PyExc_ValueError, "Decryption failed (Authentication Tag Mismatch or corrupted data)");
         goto cleanup;
@@ -210,6 +239,10 @@ static PyObject* aes_gcm_decrypt_safe(PyObject* self, PyObject* args) {
 
     // 9. Crea oggetto PyBytes (copia)
     plaintext_obj = PyBytes_FromStringAndSize((char*)plaintext_buf, plaintext_len);
+    if (!plaintext_obj) {
+        PyErr_SetString(PyExc_MemoryError, "Failed to create plaintext bytes object");
+        goto cleanup;
+    }
     
 cleanup:
     // Pulizia sicura
@@ -219,7 +252,7 @@ cleanup:
         PyMem_Free(plaintext_buf);
     }
     
-    // 🟢 FIX (Analisi #16): NON puliamo key, iv, tag (buffer Python)
+    // NON puliamo key, iv, tag (buffer Python immutabili)
 
     return plaintext_obj; // Può essere NULL in caso di errore
 }
@@ -237,9 +270,14 @@ static PyObject* generate_secure_random_safe(PyObject* self, PyObject* args) {
         return NULL;
     }
 
-    // 2. Valida la dimensione richiesta
-    // 🟢 FIX: 'generate_random' richiede MIN 1, anche se encrypt/hash permettono 0.
+    // 2. Valida la dimensione richiesta (MIN 1 per generate_random)
     if (!validate_buffer_size(num_bytes, 1, MAX_PY_BUFFER_SIZE, "buffer")) {
+        return NULL;
+    }
+    
+    // ✅ FIX: Controllo esplicito per integer overflow prima del cast a int
+    if (num_bytes > INT_MAX) {
+        PyErr_SetString(PyExc_ValueError, "Requested size too large for OpenSSL (max 2GB)");
         return NULL;
     }
 
@@ -258,6 +296,10 @@ static PyObject* generate_secure_random_safe(PyObject* self, PyObject* args) {
 
     // 5. Crea oggetto PyBytes (copia)
     random_bytes_obj = PyBytes_FromStringAndSize((char*)random_buf, num_bytes);
+    if (!random_bytes_obj) {
+        PyErr_SetString(PyExc_MemoryError, "Failed to create random bytes object");
+        goto cleanup;
+    }
 
 cleanup:
     // Pulizia sicura
@@ -281,7 +323,7 @@ static PyObject* sha256_hash_safe(PyObject* self, PyObject* args) {
         return NULL;
     }
 
-    // 2. Validazione (usa MIN_PY_BUFFER_SIZE, ora 0)
+    // 2. Validazione
     if (!validate_buffer_size(data_len, MIN_PY_BUFFER_SIZE, MAX_PY_BUFFER_SIZE, "data for hashing")) {
         return NULL;
     }
@@ -319,24 +361,20 @@ static PyObject* compare_digest_safe(PyObject* self, PyObject* args) {
         return NULL;
     }
     
-    // (Non validiamo MAX_BUFFER_SIZE qui, confronto semplice)
     if (a_len < 0 || b_len < 0) {
         PyErr_SetString(PyExc_ValueError, "Invalid lengths");
         return NULL;
     }
 
-    // 🟢 FIX: Logica di confronto robusta
-    int match = 0; // 0 = False (non corrispondono)
+    // Logica di confronto robusta
+    int match = 0;
     
     if (a_len == b_len) {
         // Solo se le lunghezze sono uguali, esegui il confronto sicuro
         if (CRYPTO_memcmp(a, b, a_len) == 0) {
-             // CRYPTO_memcmp ritorna 0 SE corrispondono
-            match = 1; // 1 = True (corrispondono)
+            match = 1;
         }
     }
-    
-    // Se le lunghezze sono diverse, 'match' rimane 0 (False)
     
     if (match == 1) {
         Py_RETURN_TRUE;
@@ -349,7 +387,6 @@ static PyObject* compare_digest_safe(PyObject* self, PyObject* args) {
  * Benchmark (placeholder)
  */
 static PyObject* benchmark_crypto_safe(PyObject* self, PyObject* args) {
-    // Placeholder se necessario
     Py_RETURN_NONE;
 }
 
@@ -380,19 +417,19 @@ static struct PyModuleDef cryptomodule = {
     CryptoMethods
 };
 
-// Inizializzazione sicura
-// Inizializzazione sicura
+// ✅ FIX: Usa API moderna di OpenSSL con check della versione
 PyMODINIT_FUNC PyInit_crypto_accelerator(void) {
-    // Inizializza OpenSSL in modo sicuro
-    OpenSSL_add_all_algorithms();
+    // OpenSSL 1.1.0+ inizializza automaticamente gli algoritmi
+    // Non serve chiamare OpenSSL_add_all_algorithms()
     
-    // 🟢 INIZIO MODIFICA (Finding #3 - Rimozione PRNG Manuale)
-    // Nelle versioni moderne di OpenSSL (1.1.1+),
-    // il PRNG viene inizializzato automaticamente e in modo sicuro
-    // (usando getrandom(), CryptGenRandom(), ecc.).
-    // Il seeding manuale (if RAND_status() != 1) da /dev/urandom
-    // è stato rimosso in quanto ridondante e non portabile.
-    // 🟢 FINE MODIFICA
-
+    #if OPENSSL_VERSION_NUMBER < 0x10100000L
+        // Solo per OpenSSL < 1.1.0 (legacy support)
+        OpenSSL_add_all_algorithms();
+    #endif
+    
+    // Note: Manual PRNG seeding from /dev/urandom was removed
+    // as modern OpenSSL (1.1.0+) handles initialization securely and automatically
+    // using platform-specific sources (getrandom(), CryptGenRandom(), etc.)
+    
     return PyModule_Create(&cryptomodule);
 }

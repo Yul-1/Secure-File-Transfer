@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 Sistema di Trasferimento File Cifrato con Sicurezza Rafforzata
-Versione corretta con tutte le vulnerabilità risolte
+Versione corretta con tutte le vulnerabilitÃ  risolte
 (Refactoring v2.5: Thread-safe state-per-thread)
-(Refactoring v2.6: Aggiunta Bidirezionalità)
+(Refactoring v2.6: Aggiunta BidirezionalitÃ )
 """
 
 import socket
@@ -45,7 +45,7 @@ RATE_LIMIT_WINDOW = 60  # secondi
 MAX_REQUESTS_PER_WINDOW = 100
 MAX_RECEIVED_MESSAGES = 1000
 MAX_GLOBAL_CONNECTIONS = 50
-IDLE_TIMEOUT = 60 # Secondi di inattività prima di chiudere
+IDLE_TIMEOUT = 60 # Secondi di inattivitÃ  prima di chiudere
 OUTPUT_DIR = Path("ricevuti")
 
 # Tipi di payload
@@ -59,7 +59,7 @@ MESSAGE_SCHEMA = {
         "type": {"type": "string", "enum": [
             "key_rotation", "ping", "pong", "auth",
             "file_header", "file_resume_ack", "file_complete", "file_ack",
-            # 🟢 FASE 1: Definizione del Protocollo
+            # ðŸŸ¢ FASE 1: Definizione del Protocollo
             "list_files_request", "list_files_response", "download_file_request"
         ]},
         "version": {"type": "string"},
@@ -70,7 +70,7 @@ MESSAGE_SCHEMA = {
     "required": ["type", "version", "timestamp", "payload"]
 }
 
-# 🟢 MODIFICA: Nuovo Header (Aggiunti PayloadType (B) e Offset (Q))
+# ðŸŸ¢ MODIFICA: Nuovo Header (Aggiunti PayloadType (B) e Offset (Q))
 # Magic(4s), Versione(I), PayloadType(B), Offset(Q), PayloadLen(I), KeyID(16s), Nonce(12s), Tag(16s)
 HEADER_FORMAT = '!4sI B Q I 16s 12s 16s'
 HEADER_PACKET_SIZE = struct.calcsize(HEADER_FORMAT) # = 65 byte
@@ -101,7 +101,7 @@ def _clear_memory(data: Any) -> None:
         pass # Best effort
 
 class RateLimiter:
-    """Limita il rate delle richieste per prevenire DoS, con cleanup TTL"""
+    """Limita il rate delle richieste per prevenire DoS, con cleanup TTL automatico"""
     
     def __init__(self, max_requests: int, window_seconds: int):
         self.max_requests = max_requests
@@ -110,9 +110,14 @@ class RateLimiter:
         self.requests: Dict[str, deque] = {}
         self.last_seen: Dict[str, float] = {}
         self._lock = threading.Lock()
+        self._running = True
+        
+        # ✅ FIX: Thread di cleanup automatico per prevenire memory leak
+        self._cleanup_thread = threading.Thread(target=self._periodic_cleanup, daemon=True)
+        self._cleanup_thread.start()
         
     def is_allowed(self, client_id: str) -> bool:
-        """Verifica se una richiesta è permessa"""
+        """Verifica se una richiesta Ã¨ permessa"""
         with self._lock:
             now = time.time()
             if client_id not in self.requests:
@@ -120,7 +125,7 @@ class RateLimiter:
             if client_id not in self.last_seen:
                 self.last_seen[client_id] = now
                 
-            # Rimuovi richieste vecchie (più vecchie della finestra)
+            # Rimuovi richieste vecchie (piÃ¹ vecchie della finestra)
             q = self.requests[client_id]
             while q and q[0] < now - self.window_seconds:
                 q.popleft()
@@ -143,6 +148,22 @@ class RateLimiter:
             for cid in stale:
                 self.requests.pop(cid, None)
                 self.last_seen.pop(cid, None)
+            if stale:
+                logger.debug(f"RateLimiter cleanup: removed {len(stale)} stale entries")
+    
+    # ✅ FIX: Metodo di cleanup periodico per prevenire memory leak
+    def _periodic_cleanup(self):
+        """Cleanup periodico in background (ogni ora)"""
+        while self._running:
+            time.sleep(3600)  # Ogni ora
+            try:
+                self.cleanup(older_than=7200)  # Rimuovi client inattivi da 2+ ore
+            except Exception as e:
+                logger.error(f"RateLimiter periodic cleanup error: {e}")
+    
+    def shutdown(self):
+        """Arresta il thread di cleanup"""
+        self._running = False
 
 class SecureKeyManager:
     """Gestione sicura delle chiavi con rotazione e pulizia memoria"""
@@ -188,9 +209,9 @@ class SecureKeyManager:
                     return entry['key']
             return None
     def add_external_key_to_cache(self, key: bytes, key_id: str):
-        """🟢 FIX (Analisi #7): Aggiunge una chiave esterna alla cache 'previous_keys'."""
+        """ðŸŸ¢ FIX (Analisi #7): Aggiunge una chiave esterna alla cache 'previous_keys'."""
         with self._lock:
-            # Controlla se esiste già per evitare duplicati (improbabile)
+            # Controlla se esiste giÃ  per evitare duplicati (improbabile)
             if self.get_key_by_id(key_id):
                 return
                 
@@ -224,7 +245,7 @@ class SecureKeyManager:
                 self.previous_keys.append(old_key_entry)
             
             self.current_key = secrets.token_bytes(32)
-            # Key id derivato deterministico dalla chiave per interoperabilità
+            # Key id derivato deterministico dalla chiave per interoperabilitÃ 
             self.key_id = hashlib.sha256(self.current_key).hexdigest()[:16]
             self.key_timestamp = datetime.now()
             
@@ -238,7 +259,7 @@ class SecureKeyManager:
                 backend=default_backend()
             )
             
-            # 🟢 CORREZIONE: Usa RSA-OAEP robusto per lo scambio di chiavi
+            # ðŸŸ¢ CORREZIONE: Usa RSA-OAEP robusto per lo scambio di chiavi
             random_secret = secrets.token_bytes(32)
             
             encrypted = self.peer_public_key.encrypt(
@@ -327,7 +348,7 @@ class SecureProtocol:
         filename = os.path.basename(filename)
         filename = re.sub(r'[^\w\s\-\.]', '', filename)
         
-        # 🟢 FIX (Analisi #5): Corregge la logica di troncamento
+        # ðŸŸ¢ FIX (Analisi #5): Corregge la logica di troncamento
         if len(filename) > 255:
             name, ext = os.path.splitext(filename)
             
@@ -348,18 +369,18 @@ class SecureProtocol:
         return filename or "unnamed_file"
     
     def encrypt_data(self, data: bytes, key: bytes = None) -> Tuple[bytes, str, bytes, bytes]:
-        """Cifra con AES-256-GCM. Se viene fornita una chiave esterna, il key_id è derivato dalla chiave stessa."""
+        """Cifra con AES-256-GCM. Se viene fornita una chiave esterna, il key_id Ã¨ derivato dalla chiave stessa."""
         with self.key_manager._lock:
             if key is None:
                 key = self.key_manager.current_key
                 key_id = self.key_manager.key_id
             else:
-                # Se la chiave esterna è fornita, deriviamo un ID deterministico a partire dalla chiave
+                # Se la chiave esterna Ã¨ fornita, deriviamo un ID deterministico a partire dalla chiave
                 key_id = hashlib.sha256(key).hexdigest()[:16]
                 
-                # 🟢 FIX (Analisi #7): Caching chiave esterna
+                # ðŸŸ¢ FIX (Analisi #7): Caching chiave esterna
                 # Aggiungila alla cache se non presente,
-                # così 'decrypt_data' può trovarla.
+                # cosÃ¬ 'decrypt_data' puÃ² trovarla.
                 if self.key_manager.get_key_by_id(key_id) is None:
                     self.key_manager.add_external_key_to_cache(key, key_id)
         
@@ -469,7 +490,7 @@ class SecureProtocol:
         """
         Analizza pacchetto con rate limiting e controllo replay.
         Restituisce (tipo_pacchetto, payload, offset)
-        'json' -> (payload è un dict)
+        'json' -> (payload Ã¨ un dict)
         'data' -> (payload sono bytes)
         """
         
@@ -540,7 +561,7 @@ class SecureProtocol:
             return ('json', message, offset)
         
         elif payload_type == PAYLOAD_TYPE_DATA:
-            # È un chunk di dati binari, NON applicare rate limit o parsing JSON
+            # Ãˆ un chunk di dati binari, NON applicare rate limit o parsing JSON
             return ('data', plaintext, offset)
             
         else:
@@ -562,7 +583,7 @@ class SecureFileTransferNode:
         self.host = host
         self.port = port
         self.identity = f"{mode}_{secrets.token_hex(4)}"
-        # 🟢 MODIFICA: Questo stato è ora usato SOLO dal CLIENT
+        # ðŸŸ¢ MODIFICA: Questo stato Ã¨ ora usato SOLO dal CLIENT
         # Il Server (handle_connection) crea le proprie istanze
         self.key_manager = SecureKeyManager(self.identity)
         self.received_messages: deque[str] = deque(maxlen=MAX_RECEIVED_MESSAGES) 
@@ -586,7 +607,7 @@ class SecureFileTransferNode:
             OUTPUT_DIR.mkdir(exist_ok=True)
             logger.info(f"Directory di output {OUTPUT_DIR.resolve()} assicurata.")
 
-    # 🟢 INIZIO REFACTORING THREAD-SAFE (Funzione #1)
+    # ðŸŸ¢ INIZIO REFACTORING THREAD-SAFE (Funzione #1)
     def _recv_all(self, sock: socket.socket, length: int) -> Optional[bytes]:
         """Riceve esattamente N bytes o None in caso di errore/timeout"""
         data = b''
@@ -594,7 +615,7 @@ class SecureFileTransferNode:
             try:
                 packet = sock.recv(length - len(data)) # USA sock
                 if not packet:
-                    # Ritorna None se lo socket è chiuso (EOF)
+                    # Ritorna None se lo socket Ã¨ chiuso (EOF)
                     return None
                 data += packet
             except socket.timeout:
@@ -604,14 +625,14 @@ class SecureFileTransferNode:
                 logger.error(f"Error receiving data: {e}")
                 return None
         return data
-    # 🟢 FINE REFACTORING THREAD-SAFE (Funzione #1)
+    # ðŸŸ¢ FINE REFACTORING THREAD-SAFE (Funzione #1)
 
-    # 🟢 INIZIO REFACTORING THREAD-SAFE (Funzione #2)
-    # 🟢 MODIFICA: Accetta key_manager opzionale, usa self.key_manager come fallback
+    # ðŸŸ¢ INIZIO REFACTORING THREAD-SAFE (Funzione #2)
+    # ðŸŸ¢ MODIFICA: Accetta key_manager opzionale, usa self.key_manager come fallback
     def _perform_secure_handshake(self, sock: socket.socket, peer_addr: str, key_manager: Optional[SecureKeyManager] = None) -> bool:
         """Esegue l'handshake RSA-OAEP"""
         
-        # Se key_manager non è fornito (es. Client), usa l'istanza 'self'
+        # Se key_manager non Ã¨ fornito (es. Client), usa l'istanza 'self'
         km = key_manager if key_manager else self.key_manager
         
         try:
@@ -652,14 +673,14 @@ class SecureFileTransferNode:
             logger.error(f"Handshake failed: {e}")
             self.transfer_stats['auth_failures'] += 1
             return False
-    # 🟢 FINE REFACTORING THREAD-SAFE (Funzione #2)
+    # ðŸŸ¢ FINE REFACTORING THREAD-SAFE (Funzione #2)
 
-    # 🟢 INIZIO REFACTORING THREAD-SAFE (Funzione #3)
-    # 🟢 MODIFICA: Accetta protocol opzionale, usa self.protocol come fallback
+    # ðŸŸ¢ INIZIO REFACTORING THREAD-SAFE (Funzione #3)
+    # ðŸŸ¢ MODIFICA: Accetta protocol opzionale, usa self.protocol come fallback
     def _read_and_parse_packet(self, sock: socket.socket, client_id: str, protocol: Optional[SecureProtocol] = None) -> Tuple[str, Any, int]:
         """Helper per leggere un pacchetto completo (Header + Payload) e parsarlo"""
         
-        # Se protocol non è fornito (es. Client), usa l'istanza 'self'
+        # Se protocol non Ã¨ fornito (es. Client), usa l'istanza 'self'
         proto = protocol if protocol else self.protocol
         
         # 1. Riceve header
@@ -686,12 +707,12 @@ class SecureFileTransferNode:
         full_packet = header + ciphertext
         
         # 4. Parsa (usa la logica di protocol.parse_packet)
-        # Questo solleverà eccezioni in caso di fallimento decrypt/auth
+        # Questo solleverÃ  eccezioni in caso di fallimento decrypt/auth
         pkt_type, payload, offset = proto.parse_packet(full_packet, client_id)
         return pkt_type, payload, offset
-    # 🟢 FINE REFACTORING THREAD-SAFE (Funzione #3)
+    # ðŸŸ¢ FINE REFACTORING THREAD-SAFE (Funzione #3)
 
-    # 🟢 INIZIO REFACTORING THREAD-SAFE (Funzione #4)
+    # ðŸŸ¢ INIZIO REFACTORING THREAD-SAFE (Funzione #4)
     def _handle_connection(self, conn: socket.socket, addr: Tuple[str, int]):
         """Gestisce il traffico cifrato in un thread separato (LOGICA SERVER)"""
         
@@ -713,73 +734,73 @@ class SecureFileTransferNode:
         # Stato del trasferimento per questa connessione
         current_transfer: Dict[str, Any] = {}
         
-        # 🟢 MODIFICA: Dichiarazione variabili locali per lo stato
+        # ðŸŸ¢ MODIFICA: Dichiarazione variabili locali per lo stato
         key_manager: Optional[SecureKeyManager] = None
         protocol: Optional[SecureProtocol] = None
         
         try:
-            # 🟢 FIX (Analisi #8): Spostato l'incremento all'interno
+            # ðŸŸ¢ FIX (Analisi #8): Spostato l'incremento all'interno
             # del 'try' per garantire che 'finally' lo catturi sempre.
             with self._counter_lock:
                 self._connection_counter += 1
 
-            # 🟢 INIZIO MODIFICA: Creazione stato locale per-thread
+            # ðŸŸ¢ INIZIO MODIFICA: Creazione stato locale per-thread
             # Ogni thread ha il suo KeyManager, la sua coda Anti-Replay, e il suo Protocollo.
             # Questo ISOLA le chiavi di sessione e risolve la race condition.
             thread_identity = f"{self.identity}_{host}:{port}_{secrets.token_hex(2)}"
             key_manager = SecureKeyManager(thread_identity)
             received_messages_queue: deque[str] = deque(maxlen=MAX_RECEIVED_MESSAGES) 
             protocol = SecureProtocol(key_manager, received_messages_queue)
-            # 🟢 FINE MODIFICA
+            # ðŸŸ¢ FINE MODIFICA
             
             # 0. Controllo limite connessioni (DoS - Circuit breaker)
-            # 🟢 FIX (Analisi #9): Eseguito PRIMA dell'handshake costoso.
+            # ðŸŸ¢ FIX (Analisi #9): Eseguito PRIMA dell'handshake costoso.
             if self._connection_counter > MAX_GLOBAL_CONNECTIONS:
                 logger.error(f"Global connection limit reached ({MAX_GLOBAL_CONNECTIONS}). Closing connection from {host}.")
                 conn.close() # USA conn
-                return # 'finally' si occuperà del decremento
+                return # 'finally' si occuperÃ  del decremento
 
             # 1. Handshake e autenticazione
-            # 🟢 MODIFICA: Passa il key_manager locale
+            # ðŸŸ¢ MODIFICA: Passa il key_manager locale
             if not self._perform_secure_handshake(conn, host, key_manager):
                 logger.error(f"[{thread_name}] Handshake failed. Closing connection.")
-                return # 'finally' si occuperà del decremento
+                return # 'finally' si occuperÃ  del decremento
             
-            # 🟢 INIZIO MODIFICA (Finding #1 - Idle Timeout)
+            # ðŸŸ¢ INIZIO MODIFICA (Finding #1 - Idle Timeout)
             last_activity_time = time.time()
-            # 🟢 FINE MODIFICA
+            # ðŸŸ¢ FINE MODIFICA
 
             # 2. Loop di comunicazione (State Machine)
             while self.running:
                 
-                # 🟢 INIZIO MODIFICA (Finding #1 - Idle Timeout)
+                # ðŸŸ¢ INIZIO MODIFICA (Finding #1 - Idle Timeout)
                 # 2.0 Verifica idle timeout usando select
                 now = time.time()
                 remaining_idle_time = (last_activity_time + IDLE_TIMEOUT) - now
                 
                 if remaining_idle_time <= 0:
                     logger.warning(f"[{thread_name}] Closing connection from {host} due to idle timeout ({IDLE_TIMEOUT}s).")
-                    break # Interrompi il loop, 'finally' pulirà
+                    break # Interrompi il loop, 'finally' pulirÃ 
 
-                # Attendi il minimo tra il timeout di inattività rimanente e il timeout del socket
+                # Attendi il minimo tra il timeout di inattivitÃ  rimanente e il timeout del socket
                 wait_time = min(remaining_idle_time, SOCKET_TIMEOUT)
                 
                 # Usa select per attendere dati in modo non bloccante (rispetto all'IDLE_TIMEOUT)
                 ready_to_read, _, _ = select.select([conn], [], [], wait_time)
                 
                 if not ready_to_read:
-                    # Select è scaduto (o per 'wait_time' o per 'remaining_idle_time')
-                    # Il loop rieseguirà il check di remaining_idle_time all'inizio
+                    # Select Ã¨ scaduto (o per 'wait_time' o per 'remaining_idle_time')
+                    # Il loop rieseguirÃ  il check di remaining_idle_time all'inizio
                     continue
-                # 🟢 FINE MODIFICA
+                # ðŸŸ¢ FINE MODIFICA
 
                 # 2.1. Leggi e parsa il prossimo pacchetto (ora sappiamo ci sono dati)
-                # 🟢 MODIFICA: Passa il protocol locale
+                # ðŸŸ¢ MODIFICA: Passa il protocol locale
                 pkt_type, payload, offset = self._read_and_parse_packet(conn, host, protocol)
                 
-                # 🟢 INIZIO MODIFICA (Finding #1 - Idle Timeout)
-                last_activity_time = time.time() # Resetta il timer DOPO attività
-                # 🟢 FINE MODIFICA
+                # ðŸŸ¢ INIZIO MODIFICA (Finding #1 - Idle Timeout)
+                last_activity_time = time.time() # Resetta il timer DOPO attivitÃ 
+                # ðŸŸ¢ FINE MODIFICA
 
                 # 2.2. Gestione Pacchetti JSON (Comandi)
                 if pkt_type == 'json':
@@ -789,7 +810,7 @@ class SecureFileTransferNode:
                     if msg_type == 'ping':
                         logger.info(f"[{thread_name}] Responding with PONG.")
                         try:
-                            # 🟢 MODIFICA: Usa il protocol locale
+                            # ðŸŸ¢ MODIFICA: Usa il protocol locale
                             pong_packet = protocol._create_json_packet('pong', {})
                             conn.sendall(pong_packet) # USA conn
                         except Exception as e:
@@ -797,13 +818,13 @@ class SecureFileTransferNode:
                             break # Interrompi se l'invio fallisce
                     
                     elif msg_type == 'file_header':
-                        # 🟢 MODIFICA: Usa il protocol locale
+                        # ðŸŸ¢ MODIFICA: Usa il protocol locale
                         filename = protocol.sanitize_filename(payload['payload']['filename'])
                         total_size = int(payload['payload']['total_size'])
-                        file_hash = payload['payload'].get('hash') # 🟢 FIX (Analisi #10)
+                        file_hash = payload['payload'].get('hash') # ðŸŸ¢ FIX (Analisi #10)
                         safe_path = OUTPUT_DIR / filename
                         
-                       # 🟢 FIX (Analisi #15): Applica MAX_FILE_SIZE
+                       # ðŸŸ¢ FIX (Analisi #15): Applica MAX_FILE_SIZE
                         if total_size > MAX_FILE_SIZE:
                             logger.error(f"[{thread_name}] File '{filename}' exceeds MAX_FILE_SIZE ({total_size} > {MAX_FILE_SIZE}). Rejecting.")
                             # Invia un errore (best-effort) e chiudi
@@ -829,14 +850,14 @@ class SecureFileTransferNode:
                             elif current_offset == total_size:
                                 logger.info(f"[{thread_name}] File {filename} already complete. Overwriting.")
                                 current_offset = 0
-                            else: # File locale corrotto/più grande
+                            else: # File locale corrotto/piÃ¹ grande
                                 logger.warning(f"[{thread_name}] Local file {filename} is larger than expected ({current_offset} > {total_size}). Overwriting.")
                                 current_offset = 0
                         
                         file_handle = safe_path.open(mode)
                         current_transfer = {'path': safe_path, 'handle': file_handle, 'total': total_size, 'hash': file_hash}                        
                         # Invia ACK con l'offset
-                        # 🟢 MODIFICA: Usa il protocol locale
+                        # ðŸŸ¢ MODIFICA: Usa il protocol locale
                         ack_packet = protocol._create_json_packet(
                             'file_resume_ack', 
                             {'filename': filename, 'offset': current_offset}
@@ -853,7 +874,7 @@ class SecureFileTransferNode:
                         current_transfer['handle'].close()
 
                         
-                        # 🟢 FIX (Analisi #10): Verifica hash
+                        # ðŸŸ¢ FIX (Analisi #10): Verifica hash
                         final_hash_ok = False
                         client_hash = current_transfer.get('hash')
                         file_path = current_transfer.get('path')
@@ -878,7 +899,7 @@ class SecureFileTransferNode:
                             logger.warning(f"[{thread_name}] Skipping hash check (no hash provided or file missing).")
                             final_hash_ok = True # Considera ok se saltato                        
                         # Invia ACK finale
-                        # 🟢 MODIFICA: Usa il protocol locale
+                        # ðŸŸ¢ MODIFICA: Usa il protocol locale
                         ack_payload = {'filename': filename}
                         if not final_hash_ok:
                             ack_payload['error'] = 'Hash mismatch on server'
@@ -886,7 +907,7 @@ class SecureFileTransferNode:
                         conn.sendall(ack_packet) # USA conn
                         current_transfer = {}
 
-                    # 🟢 FASE 2: Implementazione Logica Server (List)
+                    # ðŸŸ¢ FASE 2: Implementazione Logica Server (List)
                     elif msg_type == 'list_files_request':
                         logger.info(f"[{thread_name}] Received list_files_request from {host}")
                         file_list = []
@@ -907,7 +928,7 @@ class SecureFileTransferNode:
                             )
                         conn.sendall(response_packet)
                     
-                    # 🟢 FASE 2: Implementazione Logica Server (Download)
+                    # ðŸŸ¢ FASE 2: Implementazione Logica Server (Download)
                     elif msg_type == 'download_file_request':
                         remote_filename = payload['payload'].get('filename')
                         logger.info(f"[{thread_name}] Received download_file_request for {remote_filename}")
@@ -916,7 +937,7 @@ class SecureFileTransferNode:
                              err_packet = protocol._create_json_packet('file_ack', {'error': 'Missing filename'})
                              conn.sendall(err_packet)
                              continue
-                        # 🟢 FIX: Path Traversal (Information Leak)
+                        # ðŸŸ¢ FIX: Path Traversal (Information Leak)
                         # Rifiuta se il nome richiesto contiene componenti di percorso.
                         sanitized_name = protocol.sanitize_filename(remote_filename)
                         
@@ -955,13 +976,13 @@ class SecureFileTransferNode:
                         logger.info(f"[{thread_name}] Starting send logic for {sanitized_name} to {host}")
                         # Avvia la logica di invio (bloccante per questo thread)
                         try:
-                            # 🟢 REFACTOR: Chiama la logica di invio unificata
+                            # ðŸŸ¢ REFACTOR: Chiama la logica di invio unificata
                             # Passa il socket e il protocollo di *questo* thread
                             self._internal_send_file_logic(conn, protocol, target_path, None)
                         except Exception as e:
                             logger.error(f"[{thread_name}] Failed to send file {sanitized_name}: {e}")
-                            # Errore già gestito/loggato da _internal_send_file_logic
-                            break # Interrompi il loop, la connessione è probabilmente morta
+                            # Errore giÃ  gestito/loggato da _internal_send_file_logic
+                            break # Interrompi il loop, la connessione Ã¨ probabilmente morta
 
 
                 # 2.3. Gestione Pacchetti DATA (Chunks)
@@ -980,9 +1001,9 @@ class SecureFileTransferNode:
 
             logger.info(f"[{thread_name}] Connection closed gracefully.")
 
-        # 🟢 CORREZIONE: Gestione pulita della disconnessione
+        # ðŸŸ¢ CORREZIONE: Gestione pulita della disconnessione
         except ConnectionAbortedError as e:
-            # Il client si è disconnesso (normale, dopo il file_ack o timeout)
+            # Il client si Ã¨ disconnesso (normale, dopo il file_ack o timeout)
             logger.info(f"[{thread_name}] Client connection closed: {e}")
         except ValueError as e:
             # Errore nel protocollo (numero magico, replay, JSON malformato, firma)
@@ -1000,7 +1021,7 @@ class SecureFileTransferNode:
                 except Exception as e:
                     logger.error(f"[{thread_name}] Failed to close file handle: {e}")
             
-            # 🟢 MODIFICA: Pulizia sicura delle chiavi locali del thread
+            # ðŸŸ¢ MODIFICA: Pulizia sicura delle chiavi locali del thread
             if key_manager:
                 if key_manager.current_key:
                     _clear_memory(key_manager.current_key)
@@ -1021,17 +1042,17 @@ class SecureFileTransferNode:
         # Permette il riuso dell'indirizzo
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         
-        # 🟢 MODIFICA: Bindando a self.port (che può essere 0)
+        # ðŸŸ¢ MODIFICA: Bindando a self.port (che puÃ² essere 0)
         self.socket.bind((self.host, self.port))
         
-        # 🟢 MODIFICA: Recupera la porta reale assegnata dal SO
-        # Se self.port era 0, ora conterrà la porta effimera
+        # ðŸŸ¢ MODIFICA: Recupera la porta reale assegnata dal SO
+        # Se self.port era 0, ora conterrÃ  la porta effimera
         actual_port = self.socket.getsockname()[1]
         self.port = actual_port
         
         self.socket.listen(5) # Backlog limitato
         
-        # Il log ora mostrerà la porta corretta
+        # Il log ora mostrerÃ  la porta corretta
         logger.info(f"Server listening on {self.host}:{self.port}...")
         logger.info(f"File verranno salvati in: {OUTPUT_DIR.resolve()}")
 
@@ -1074,11 +1095,11 @@ class SecureFileTransferNode:
             logger.info(f"Connecting to {host}:{port}...")
             self.peer_socket.connect((host, port))
             
-            # 🟢 INIZIO REFACTORING THREAD-SAFE (Client)
+            # ðŸŸ¢ INIZIO REFACTORING THREAD-SAFE (Client)
             # Handshake (NON passa istanze, usa il fallback a self.*)
             if not self._perform_secure_handshake(self.peer_socket, self.peer_address):
                 raise ConnectionRefusedError("Secure handshake failed.")
-            # 🟢 FINE REFACTORING THREAD-SAFE (Client)
+            # ðŸŸ¢ FINE REFACTORING THREAD-SAFE (Client)
                 
             logger.info("Connection successful. Ready to send files.")
             # Non avvia un loop, resta in attesa di comandi (es. send_file)
@@ -1088,7 +1109,7 @@ class SecureFileTransferNode:
             self.shutdown() # Chiude se l'handshake fallisce
             raise # Rilancia l'eccezione
 
-    # 🟢 FASE 2: REFACTOR (Sposta logica da send_file a helper)
+    # ðŸŸ¢ FASE 2: REFACTOR (Sposta logica da send_file a helper)
     def _internal_send_file_logic(
         self, 
         sock: socket.socket, 
@@ -1226,7 +1247,12 @@ class SecureFileTransferNode:
         if not local_path.exists() or not local_path.is_file():
             raise FileNotFoundError(f"File not found: {local_filepath}")
         
-        # 🟢 REFACTOR: Chiama la logica unificata
+        # ✅ FIX: Validazione MAX_FILE_SIZE lato client
+        file_size = local_path.stat().st_size
+        if file_size > MAX_FILE_SIZE:
+            raise ValueError(f"File too large: {file_size} bytes (max: {MAX_FILE_SIZE} bytes = {MAX_FILE_SIZE // (1024**3)}GB)")
+        
+        # Chiama la logica unificata
         self._internal_send_file_logic(
             self.peer_socket, 
             self.protocol, 
@@ -1234,7 +1260,7 @@ class SecureFileTransferNode:
             progress_callback
         )
             
-    # 🟢 FASE 1: Implementa Nuovi Metodi Client (List)
+    # ðŸŸ¢ FASE 1: Implementa Nuovi Metodi Client (List)
     def list_files(self) -> list:
         """Richiede l'elenco dei file remoti (LOGICA CLIENT)"""
         if not self.running or not self.peer_socket:
@@ -1266,7 +1292,7 @@ class SecureFileTransferNode:
             self.transfer_stats['errors'] += 1
             raise
             
-    # 🟢 FASE 1: Implementa Nuovi Metodi Client (Download)
+    # ðŸŸ¢ FASE 1: Implementa Nuovi Metodi Client (Download)
     def download_file(self, remote_filename: str, local_save_path: Path, progress_callback: Optional[callable] = None):
         """Richiede un file dal server (LOGICA CLIENT - Download)"""
         if not self.running or not self.peer_socket:
@@ -1429,7 +1455,7 @@ class SecureFileTransferNode:
                 pass
         
         # Pulizia chiavi correnti (Best-effort)
-        # 🟢 NOTA: Questo ora pulisce solo le chiavi del CLIENT
+        # ðŸŸ¢ NOTA: Questo ora pulisce solo le chiavi del CLIENT
         # Le chiavi del SERVER sono pulite nel 'finally' di _handle_connection
         if self.key_manager.current_key:
             _clear_memory(self.key_manager.current_key)
@@ -1469,7 +1495,7 @@ def main():
         if args.mode == 'server':
             node.start_server()
         else:
-            # Modalità Client
+            # ModalitÃ  Client
             if not args.connect:
                 print("[ERROR] Specify --connect SERVER_IP:PORT for client mode")
                 return
@@ -1511,54 +1537,69 @@ def main():
                 print(f"[ERROR] Cannot resolve host: {server_host}")
                 return
 
-            # 🟢 FIX: Validazione percorso client *prima* della connessione
+            # ✅ FIX: Validazione percorso client migliorata con controllo sovrascrittura
+            # Validazione percorso client
             local_save_path_for_download: Optional[Path] = None
+            temp_download_path: Optional[Path] = None  # Per download temporaneo
 
             if args.download:
                 remote_filename_to_request = args.download
-
-                # FIX: Path Traversal Vulnerability (Client-side write)
-                # Determina un nome file *locale* sicuro, ignorando i percorsi
                 safe_local_filename = os.path.basename(remote_filename_to_request)
-                if not safe_local_filename: # Se l'input era "///" o "."
+                if not safe_local_filename:
                      print(f"[ERROR] Invalid remote filename: {remote_filename_to_request}")
                      return
 
-                # Determina la directory di salvataggio locale
                 local_save_dir = Path(args.output).resolve()
                 
-                # Se l'output è una directory, salva il file al suo interno
                 if local_save_dir.is_dir():
                     local_save_path_for_download = local_save_dir / safe_local_filename
                 else:
-                    # Se --output è un nome di file, usa quello
                     local_save_path_for_download = local_save_dir
+                
+                # Se file esiste e utente vuole overwrite, usa nome temporaneo
+                if local_save_path_for_download.exists():
+                    file_size = local_save_path_for_download.stat().st_size
+                    print(f"[WARNING] File '{local_save_path_for_download}' already exists ({file_size} bytes).")
+                    
+                    try:
+                        user_input = input("Resume download or overwrite? (r=resume, o=overwrite, c=cancel): ").lower()
+                        if user_input == 'c':
+                            print("Download cancelled by user.")
+                            return
+                        elif user_input == 'o':
+                            # Scarica con nome temporaneo per sicurezza
+                            temp_download_path = local_save_path_for_download.parent / f".tmp_{safe_local_filename}.{os.getpid()}"
+                            print(f"Downloading to temporary file first for safety...")
+                            logger.info(f"Using temporary path for overwrite: {temp_download_path}")
+                        elif user_input == 'r':
+                            pass  # Resume normale
+                        else:
+                            print("Invalid choice. Use 'r' (resume), 'o' (overwrite), or 'c' (cancel).")
+                            return
+                    except (EOFError, KeyboardInterrupt):
+                        print("\nDownload cancelled.")
+                        return
                 
                 print(f"Downloading '{remote_filename_to_request}' to '{local_save_path_for_download}'...")
 
                 try:
-                    # Assicurati che la directory di output esista
                     local_save_path_for_download.parent.mkdir(parents=True, exist_ok=True)
-                    # Tenta di verificare i permessi di scrittura sul *file*
-                    with open(local_save_path_for_download, 'a'):
-                        pass
-                    # Rimuovi il file vuoto se esiste e non stiamo riprendendo
-                    if local_save_path_for_download.stat().st_size == 0:
-                         os.remove(local_save_path_for_download)
-
-                except PermissionError as e:
-                    print(f"[ERROR] Local permission error. Cannot write to destination: {local_save_path_for_download.parent}")
-                    print(f"Details: {e}")
-                    return # Esci *prima* di connetterti
+                    test_file = local_save_path_for_download.parent / f".test_write_{os.getpid()}"
+                    try:
+                        test_file.touch()
+                        test_file.unlink()
+                    except (PermissionError, OSError) as e:
+                        print(f"[ERROR] Cannot write to directory: {local_save_path_for_download.parent}")
+                        print(f"Details: {e}")
+                        return
                 except Exception as e:
-                    print(f"[ERROR] Local path error: {e}")
-                    return # Esci *prima* di connetterti
+                    print(f"[ERROR] Path validation error: {e}")
+                    return
             
-            # Esegui la logica client (ORA che la validazione è passata)
+            # Esegui la logica client
             try:
                 node.connect_to_server(server_host, server_port)
                 
-                # Esegui l'azione richiesta
                 if args.file:
                     print(f"Uploading {args.file}...")
                     node.send_file(args.file, progress_callback=simple_progress_callback)
@@ -1575,16 +1616,40 @@ def main():
                         print("Nessun file trovato o errore del server.")
                 
                 elif args.download:
-                    # Il percorso è già stato controllato e validato
-                    # local_save_path_for_download è già definito
+                    # Usa path temporaneo se overwrite, altrimenti path normale
+                    actual_download_path = temp_download_path if temp_download_path else local_save_path_for_download
+                    
                     node.download_file(
-                        args.download, # Invia il nome *richiesto* (es. /etc/passwd)
-                        local_save_path_for_download, # Salva in un percorso *sicuro* (es. ./passwd)
+                        args.download,
+                        actual_download_path,
                         progress_callback=simple_progress_callback
                     )
                     
+                    # Se download riuscito con file temporaneo, sostituisci l'originale
+                    if temp_download_path and actual_download_path.exists():
+                        try:
+                            # Elimina il vecchio file
+                            if local_save_path_for_download.exists():
+                                local_save_path_for_download.unlink()
+                                logger.info(f"Deleted old file: {local_save_path_for_download}")
+                            
+                            # Rinomina temporaneo -> definitivo
+                            temp_download_path.rename(local_save_path_for_download)
+                            logger.info(f"Renamed {temp_download_path} -> {local_save_path_for_download}")
+                            print(f"File successfully replaced: {local_save_path_for_download}")
+                        except Exception as e:
+                            print(f"[ERROR] Failed to replace file: {e}")
+                            print(f"Downloaded file kept as: {temp_download_path}")
+                    
             except (ConnectionRefusedError, FileNotFoundError, Exception) as e:
                 logger.error(f"Client operation failed: {e}")
+                # Se fallisce con file temporaneo, eliminalo
+                if temp_download_path and temp_download_path.exists():
+                    try:
+                        temp_download_path.unlink()
+                        logger.info(f"Cleaned up temporary file: {temp_download_path}")
+                    except Exception:
+                        pass
             finally:
                 node.shutdown()
             
