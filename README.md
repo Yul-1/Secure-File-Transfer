@@ -1,10 +1,10 @@
 # 🛡️ AegisTransfer - Secure File Transfer System
 
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/Yul-1/SFT)
+[![Version](https://img.shields.io/badge/version-2.6-blue)](https://github.com/Yul-1/SFT)
 [![Security](https://img.shields.io/badge/security-hardened-blueviolet)](https://github.com/Yul-1/SFT)
 [![Tests](https://img.shields.io/badge/tests-comprehensive-success)](https://github.com/Yul-1/SFT)
-[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/Yul-1/SFT/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/Yul-1/SFT)
 
 ## 📋 Indice
 
@@ -23,11 +23,20 @@
 
 ## 🎯 Panoramica
 
-AegisTransfer è un sistema di trasferimento file sicuro progettato da zero con un'architettura "security-first". Il progetto combina la velocità della crittografia hardware-accelerata in C con la sicurezza e la flessibilità di Python, creando una soluzione robusta per il trasferimento sicuro di file su reti non fidate.
+AegisTransfer è un sistema di trasferimento file **bidirezionale** e sicuro progettato da zero con un'architettura "security-first". Il progetto combina la velocità della crittografia hardware-accelerata in C con la sicurezza e la flessibilità di Python, creando una soluzione robusta per il trasferimento sicuro di file su reti non fidate.
+
+**Versione corrente: 2.6** - Supporto completo per upload, download e listing di file remoti.
 
 ### Perché AegisTransfer?
 
 Mentre esistono protocolli consolidati come SCP e SFTP, AegisTransfer serve come studio approfondito sull'implementazione di software sicuro a più livelli. Il sistema implementa contromisure avanzate contro vulnerabilità comuni, offrendo un'alternativa moderna con focus particolare sulla sicurezza della memoria e sulla resistenza ad attacchi sofisticati.
+
+### Funzionalità Chiave v2.6
+- **Upload sicuro** di file verso il server
+- **Download sicuro** di file dal server
+- **Listing remoto** per visualizzare file disponibili
+- **Resume automatico** dei trasferimenti interrotti
+- **Crittografia end-to-end** con AES-256-GCM e RSA-4096
 
 ## ✨ Caratteristiche Principali
 
@@ -52,6 +61,7 @@ Mentre esistono protocolli consolidati come SCP e SFTP, AegisTransfer serve come
 
 ### 🔄 Affidabilità
 - **Thread-Safe**: Architettura multi-thread con isolamento completo delle sessioni
+- **Bidirezionalità**: Upload, download e listing file remoti
 - **Validazione Protocollo**: Schema JSON rigoroso per tutti i messaggi
 - **Gestione Errori Robusta**: Recovery graceful da errori di rete e protocollo
 - **Logging Completo**: Sistema di log dettagliato con rotazione automatica
@@ -83,7 +93,7 @@ Il sistema è costruito su tre livelli interconnessi che lavorano in sinergia pe
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      Livello Core                           │
-│               (crypto_accelerator_fixed.c)                  │
+│               (crypto-accelerator-fixed.c)                  │
 │  • Cifratura AES-256-GCM via OpenSSL                       │
 │  • Generazione numeri casuali sicuri                       │
 │  • Hashing SHA-256                                         │
@@ -97,14 +107,14 @@ Il sistema è costruito su tre livelli interconnessi che lavorano in sinergia pe
 sequenceDiagram
     participant C as Client
     participant S as Server
-    
+
     Note over C,S: Handshake Phase
     C->>S: RSA Public Key
     S->>C: RSA Public Key
     C->>S: Encrypted Secret
     S->>C: AUTH_OK
-    
-    Note over C,S: Transfer Phase
+
+    Note over C,S: Upload Mode
     C->>S: File Header (encrypted)
     S->>C: Resume ACK (offset)
     loop Data Chunks
@@ -112,6 +122,20 @@ sequenceDiagram
     end
     C->>S: File Complete
     S->>C: File ACK
+
+    Note over C,S: List Mode
+    C->>S: LIST_REQUEST
+    S->>C: File List (encrypted)
+
+    Note over C,S: Download Mode
+    C->>S: DOWNLOAD_REQUEST (filename)
+    S->>C: File Header (encrypted)
+    C->>S: Resume ACK (offset)
+    loop Data Chunks
+        S->>C: Data Chunk (encrypted)
+    end
+    S->>C: File Complete
+    C->>S: File ACK
 ```
 
 ## 🔒 Sicurezza
@@ -202,11 +226,6 @@ python3 python_wrapper_fixed.py --compile
 python3 python_wrapper_fixed.py --test
 ```
 
-### Installazione Rapida (One-liner)
-
-```bash
-curl -sSL https://raw.githubusercontent.com/Yul-1/SFT/main/install.sh | bash
-```
 
 ## 🚀 Utilizzo
 
@@ -227,16 +246,16 @@ python3 secure_file_transfer_fixed.py --mode server
 # Server su IP e porta specifici
 python3 secure_file_transfer_fixed.py --mode server --host 192.168.1.100 --port 9999
 
-# Server con logging dettagliato
-python3 secure_file_transfer_fixed.py --mode server --debug
+# Server con logging dettagliato (variabile d'ambiente)
+DEBUG=1 python3 secure_file_transfer_fixed.py --mode server
 
 # Server con directory output custom
 OUTPUT_DIR=/mnt/storage python3 secure_file_transfer_fixed.py --mode server
 ```
 
-### Invio File come Client
+### Client - Operazioni Disponibili
 
-#### Trasferimento Singolo
+#### Upload File (Invio)
 ```bash
 # Invia un file a un server locale
 python3 secure_file_transfer_fixed.py --mode client \
@@ -247,6 +266,40 @@ python3 secure_file_transfer_fixed.py --mode client \
 python3 secure_file_transfer_fixed.py --mode client \
     --connect server.example.com:9999 \
     --file /path/to/large_archive.zip
+```
+
+#### List File Remoti
+```bash
+# Elenca tutti i file disponibili sul server
+python3 secure_file_transfer_fixed.py --mode client \
+    --connect 127.0.0.1:5555 \
+    --list
+
+# Output esempio:
+# File disponibili sul server:
+# - documento.pdf (1.2 MB)
+# - archive.zip (45.7 MB)
+# - report.docx (234 KB)
+```
+
+#### Download File
+```bash
+# Scarica un file specifico dal server
+python3 secure_file_transfer_fixed.py --mode client \
+    --connect 127.0.0.1:5555 \
+    --download documento.pdf
+
+# Scarica in una directory specifica
+python3 secure_file_transfer_fixed.py --mode client \
+    --connect 127.0.0.1:5555 \
+    --download archive.zip \
+    --output /path/to/destination/
+
+# Scarica con nome personalizzato
+python3 secure_file_transfer_fixed.py --mode client \
+    --connect 127.0.0.1:5555 \
+    --download report.docx \
+    --output ./downloads/monthly_report.docx
 ```
 
 #### Script di Trasferimento Batch
@@ -268,14 +321,27 @@ done
 
 ### Esempi di Utilizzo Pratico
 
-#### Backup Sicuro
+#### Backup Sicuro Bidirezionale
 ```bash
 # Server di backup
 python3 secure_file_transfer_fixed.py --mode server --port 8888
 
 # Client - invia backup
-tar czf - /important/data | python3 secure_file_transfer_fixed.py \
-    --mode client --connect backup-server:8888 --file -
+python3 secure_file_transfer_fixed.py --mode client \
+    --connect backup-server:8888 \
+    --file /path/to/backup.tar.gz
+
+# Client - recupera backup precedenti
+# 1. Lista i backup disponibili
+python3 secure_file_transfer_fixed.py --mode client \
+    --connect backup-server:8888 \
+    --list
+
+# 2. Scarica un backup specifico
+python3 secure_file_transfer_fixed.py --mode client \
+    --connect backup-server:8888 \
+    --download backup_2024-11-22.tar.gz \
+    --output /restore/
 ```
 
 #### Trasferimento con Monitoraggio
@@ -318,9 +384,6 @@ Il progetto include una suite di test comprehensiva con oltre 50 test case:
 # Esegui tutti i test
 python3 -m pytest tests/ -v
 
-# Test con coverage
-python3 -m pytest tests/ --cov=. --cov-report=html
-
 # Test specifici per categoria
 python3 -m pytest tests/test_crypto_accelerator.py -v  # Test modulo C
 python3 -m pytest tests/test_python_wrapper.py -v      # Test wrapper
@@ -335,27 +398,10 @@ python3 -m pytest tests/test_concurrency.py -v         # Test concorrenza
 # Benchmark crittografico
 python3 python_wrapper_fixed.py --benchmark
 
-# Test di carico
-python3 tests/load_test.py --clients 100 --duration 60
-
 # Test di trasferimento file grandi
 dd if=/dev/urandom of=test_1gb.bin bs=1M count=1024
 time python3 secure_file_transfer_fixed.py --mode client \
     --connect localhost:5555 --file test_1gb.bin
-```
-
-### Test di Sicurezza
-
-```bash
-# Test penetrazione base
-nmap -sV -p 5555 localhost  # Scan delle porte
-nikto -h http://localhost:5555  # Web vulnerability scan
-
-# Test fuzzing
-python3 tests/fuzz_protocol.py --iterations 10000
-
-# Test replay attack
-python3 tests/replay_attack_test.py
 ```
 
 ## 📊 Performance
@@ -382,11 +428,11 @@ python3 tests/replay_attack_test.py
 
 ```
 SFT/
-├── secure_file_transfer_fixed.py  # Protocollo principale
+├── secure_file_transfer_fixed.py  # Protocollo principale (v2.6)
 ├── python_wrapper_fixed.py        # Wrapper crittografico
-├── crypto_accelerator_fixed.c     # Modulo C
+├── crypto-accelerator-fixed.c     # Modulo C (sorgente)
+├── crypto_accelerator.so          # Modulo C compilato
 ├── requirements.txt               # Dipendenze Python
-├── setup.py                       # Script di setup
 ├── tests/                         # Suite di test
 │   ├── conftest.py               # Fixtures pytest
 │   ├── test_crypto_accelerator.py
@@ -394,10 +440,12 @@ SFT/
 │   ├── test_security_protocol.py
 │   ├── test_dos_mitigation.py
 │   ├── test_concurrency.py
-│   └── test_unit_sft.py
+│   ├── test_unit_sft.py
+│   ├── test_p0_security.py       # Test sicurezza priorità 0
+│   ├── test_p1_robustness.py     # Test robustezza priorità 1
+│   ├── test_p2_completeness.py   # Test completezza priorità 2
+│   └── test_p2_unit_completeness.py
 ├── ricevuti/                      # Directory output (creata runtime)
-├── docs/                          # Documentazione
-├── examples/                      # Esempi di utilizzo
 └── README.md                      # Questo file
 ```
 
@@ -409,12 +457,11 @@ git clone https://github.com/Yul-1/SFT.git
 cd SFT
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements-dev.txt
-pre-commit install
+pip install -r requirements.txt
 
 # Compilazione debug del modulo C
 gcc -shared -fPIC -g -O0 -DDEBUG \
-    crypto_accelerator_fixed.c -o crypto_accelerator.so -lcrypto
+    crypto-accelerator-fixed.c -o crypto_accelerator.so -lcrypto
 
 # Run con debug logging
 DEBUG=1 python3 secure_file_transfer_fixed.py --mode server --debug
@@ -444,14 +491,21 @@ DEBUG=1 python3 secure_file_transfer_fixed.py --mode server --debug
 - [x] Protezione anti-DoS base
 - [x] Test suite completa
 
-### Versione 2.5 🚧
+### Versione 2.5 ✅
 - [x] Thread safety completo
 - [x] Resume dei trasferimenti
 - [x] Fallback Python automatico
-- [ ] GUI con PyQt6
-- [ ] Trasferimenti multi-file
+
+### Versione 2.6 ✅ (Corrente)
+- [x] Funzionalità bidirezionale (upload e download)
+- [x] Comando `--list` per elencare file remoti
+- [x] Comando `--download` per scaricare file dal server
+- [x] Output directory personalizzabile
+- [x] Suite di test estesa con priorità (P0, P1, P2)
 
 ### Versione 3.0 📋
+- [ ] GUI con PyQt6
+- [ ] Trasferimenti multi-file simultanei
 - [ ] Autenticazione certificati X.509
 - [ ] Compressione pre-trasferimento
 - [ ] Trasferimento directory ricorsivo
@@ -481,7 +535,7 @@ Contributi, issues e feature requests sono benvenuti! Sentiti libero di controll
 
 ## 📝 Licenza
 
-Questo progetto è distribuito sotto licenza MIT. Vedi il file [LICENSE](LICENSE) per maggiori dettagli.
+Questo progetto è distribuito sotto licenza MIT.
 
 ## 🙏 Riconoscimenti
 
@@ -492,7 +546,6 @@ Questo progetto è distribuito sotto licenza MIT. Vedi il file [LICENSE](LICENSE
 ## 📞 Contatti
 
 - **GitHub**: [@Yul-1](https://github.com/Yul-1)
-- **Email**: 
 - **Issues**: [GitHub Issues](https://github.com/Yul-1/SFT/issues)
 
 ---
