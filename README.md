@@ -1,7 +1,7 @@
 # 🛡️ Secure File Transfer System
 
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-2.6-blue)](https://github.com/Yul-1/SFT)
+[![Version](https://img.shields.io/badge/version-2.7-blue)](https://github.com/Yul-1/SFT)
 [![Security](https://img.shields.io/badge/security-hardened-blueviolet)](https://github.com/Yul-1/SFT)
 [![Tests](https://img.shields.io/badge/tests-comprehensive-success)](https://github.com/Yul-1/SFT)
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/Yul-1/SFT)
@@ -25,33 +25,39 @@
 
 Secure File Transfer is a **bidirectional** secure file transfer system designed from the ground up with a "security-first" architecture. The project combines the speed of hardware-accelerated cryptography in C with the security and flexibility of Python, creating a robust solution for secure file transfer over untrusted networks.
 
-**Current version: 2.6** - Complete support for upload, download, and remote file listing.
+**Current version: 2.7** - Complete support for upload, download, and remote file listing with enhanced cryptographic security.
 
 ### Why Secure File Transfer?
 
 While established protocols like SCP and SFTP exist, Secure File Transfer serves as an in-depth study on implementing secure multi-layered software. The system implements advanced countermeasures against common vulnerabilities, offering a modern alternative with particular focus on memory security and resistance to sophisticated attacks.
 
-### Key Features v2.6
+### Key Features v2.7
 - **Secure upload** of files to the server
 - **Secure download** of files from the server
 - **Remote listing** to view available files
 - **Automatic resume** of interrupted transfers
-- **End-to-end encryption** with AES-256-GCM and RSA-4096
+- **End-to-end encryption** with AES-256-GCM and ECDH (X25519)
+- **Digital signatures** with Ed25519 for authentication
+- **Authenticated packet headers** to prevent tampering
 
 ## ✨ Key Features
 
 ### 🔐 Advanced Encryption
 - **AES-256-GCM** for symmetric encryption with integrated authentication
-- **RSA-4096 with OAEP** for secure key exchange
+- **ECDH (X25519)** for Diffie-Hellman key exchange (replaces RSA-4096)
+- **Ed25519** for digital signatures and authentication
 - **HMAC-SHA256** for message integrity signing and verification
 - **PBKDF2** with 100,000 iterations for key derivation
+- **Authenticated headers** with AAD (Additional Authenticated Data) to prevent packet tampering
 
 ### 🛡️ Security Protections
-- **Anti-DoS**: Intelligent rate limiting and connection management
+- **Anti-DoS**: Intelligent rate limiting and connection management (mitigates RSA key exhaustion attacks)
 - **Anti-Replay**: Detection system based on timestamps and message IDs
 - **Anti-Timing**: Constant-time comparisons to prevent side-channel attacks
-- **Path Traversal Protection**: Strict filename sanitization
+- **Anti-Tampering**: AAD authentication of packet headers prevents modification
+- **Path Traversal Protection**: Strict filename sanitization and validation
 - **Memory Safety**: Secure cleanup of keys from memory after use
+- **Information Leak Prevention**: Sanitized error messages and side-channel protections
 
 ### ⚡ Performance
 - **Hardware Acceleration**: C module compiled with native optimizations
@@ -75,9 +81,10 @@ The system is built on three interconnected layers that work in synergy to provi
 │                    Protocol Layer                           │
 │                       (sft.py)                              │
 │  • TCP connection management                                │
-│  • RSA-OAEP handshake                                       │
+│  • ECDH (X25519) + Ed25519 handshake                        │
 │  • Transfer state machine                                   │
 │  • Rate limiting and DoS protections                        │
+│  • AAD-authenticated packet headers                         │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -108,37 +115,48 @@ sequenceDiagram
     participant C as Client
     participant S as Server
 
-    Note over C,S: Handshake Phase
-    C->>S: RSA Public Key
-    S->>C: RSA Public Key
-    C->>S: Encrypted Secret
-    S->>C: AUTH_OK
+    Note over C,S: Handshake Phase (ECDH + Ed25519)
+    C->>S: X25519 Public Key + Ed25519 Public Key
+    S->>C: X25519 Public Key + Ed25519 Public Key
+    Note over C,S: Both derive shared secret via ECDH
+    C->>S: Signed Challenge (Ed25519)
+    S->>C: AUTH_OK + Signed Response
 
-    Note over C,S: Upload Mode
-    C->>S: File Header (encrypted)
+    Note over C,S: Upload Mode (AAD-authenticated)
+    C->>S: File Header (encrypted + AAD)
     S->>C: Resume ACK (offset)
     loop Data Chunks
-        C->>S: Data Chunk (encrypted)
+        C->>S: Data Chunk (encrypted + AAD)
     end
     C->>S: File Complete
     S->>C: File ACK
 
     Note over C,S: List Mode
-    C->>S: LIST_REQUEST
-    S->>C: File List (encrypted)
+    C->>S: LIST_REQUEST (encrypted + AAD)
+    S->>C: File List (encrypted + AAD)
 
     Note over C,S: Download Mode
-    C->>S: DOWNLOAD_REQUEST (filename)
-    S->>C: File Header (encrypted)
+    C->>S: DOWNLOAD_REQUEST (filename, encrypted + AAD)
+    S->>C: File Header (encrypted + AAD)
     C->>S: Resume ACK (offset)
     loop Data Chunks
-        S->>C: Data Chunk (encrypted)
+        S->>C: Data Chunk (encrypted + AAD)
     end
     S->>C: File Complete
     C->>S: File ACK
 ```
 
 ## 🔒 Security
+
+### Recent Security Enhancements (v2.7)
+
+The latest version includes significant cryptographic improvements:
+
+- **ECDH Migration**: Replaced RSA-4096 with X25519 Elliptic Curve Diffie-Hellman to eliminate RSA key exhaustion DoS attacks while maintaining strong security
+- **Ed25519 Signatures**: Added digital signature authentication for non-repudiation and enhanced identity verification
+- **AAD Authentication**: All packet headers are now authenticated using Additional Authenticated Data (AAD) in AES-GCM, preventing header tampering attacks
+- **Information Leak Fixes**: Resolved side-channel vulnerabilities through sanitized error messages and strict validation
+- **Path Traversal Hardening**: Enhanced filename validation on both client and server to prevent directory traversal attacks
 
 ### Multi-Layer Protection
 
@@ -157,10 +175,12 @@ The system implements defense in depth with multiple protections at every layer:
 - **Schema Validation**: Strict JSON Schema for all messages
 
 #### Cryptographic Layer
-- **Key Rotation**: Automatic key rotation every 300 seconds
-- **Perfect Forward Secrecy**: New keys for each session
-- **Authenticated Encryption**: AES-GCM for confidentiality and integrity
+- **ECDH Key Exchange**: X25519 Elliptic Curve Diffie-Hellman for key agreement
+- **Digital Signatures**: Ed25519 for authentication and non-repudiation
+- **Perfect Forward Secrecy**: New ephemeral keys for each session
+- **Authenticated Encryption**: AES-GCM with AAD for confidentiality, integrity, and header authentication
 - **Secure Random**: Generation via OpenSSL RAND_bytes or secrets.token_bytes
+- **DoS Resistance**: ECDH prevents RSA key exhaustion attacks
 
 #### Memory Layer
 - **Secure Zeroing**: Explicit cleanup of keys from memory
@@ -172,13 +192,16 @@ The system implements defense in depth with multiple protections at every layer:
 
 | Vulnerability | Implemented Mitigation |
 |--------------|------------------------|
-| DoS/DDoS | Rate limiting, connection limits, timeout |
+| DoS/DDoS | Rate limiting, connection limits, timeout, ECDH (no RSA exhaustion) |
 | Replay Attack | Message ID tracking, timestamp validation |
 | Timing Attack | Constant-time comparison (CRYPTO_memcmp) |
-| Path Traversal | Filename sanitization, basename extraction |
+| Path Traversal | Filename sanitization, basename extraction, validation |
 | Memory Leaks | Explicit memory zeroing, automatic cleanup |
 | Buffer Overflow | Size validation, FORTIFY_SOURCE |
-| MITM | RSA-4096 key exchange, certificate pinning (planned) |
+| MITM | ECDH (X25519) + Ed25519 authentication |
+| Packet Tampering | AAD authentication on all packet headers |
+| Information Leak | Sanitized errors, side-channel protections |
+| Key Exhaustion | ECDH with ephemeral keys (replaces RSA) |
 
 ## 📦 Installation
 
@@ -403,7 +426,7 @@ time python3 sft.py --mode client \
 
 ```
 SFT/
-├── sft.py                          # Main protocol (v2.6)
+├── sft.py                          # Main protocol (v2.7)
 ├── python_wrapper.py               # Cryptographic wrapper
 ├── crypto_accelerator.c            # C module (source)
 ├── crypto_accelerator.so           # Compiled C module
@@ -471,12 +494,27 @@ DEBUG=1 python3 sft.py --mode server --debug
 - [x] Transfer resume
 - [x] Automatic Python fallback
 
-### Version 2.6 ✅ (Current)
+### Version 2.6 ✅
 - [x] Bidirectional functionality (upload and download)
 - [x] `--list` command to list remote files
 - [x] `--download` command to download files from server
 - [x] Customizable output directory
 - [x] Extended test suite with priorities (P0, P1, P2)
+
+### Version 2.7 ✅ (Current)
+- [x] Migration from RSA to ECDH (X25519) for key exchange
+- [x] Ed25519 digital signatures for authentication
+- [x] AAD (Additional Authenticated Data) on packet headers
+- [x] DoS resistance improvements (RSA exhaustion mitigation)
+- [x] Information leak prevention and side-channel protections
+- [x] Enhanced path traversal validation
+- [ ] Linux installer script (install.sh)
+
+### Version 2.8 📋
+- [ ] Fingerprint/passphrase authentication to mitigate MitM attacks
+- [ ] Replay bypass mitigation (FIFO queue flooding resets replay memory)
+- [ ] Zombie file protection (corrupted/malicious files remain on disk after hash failure)
+- [ ] File descriptor leak prevention (server crash without closing file handles)
 
 ### Version 3.0 📋
 - [ ] GUI with PyQt6
