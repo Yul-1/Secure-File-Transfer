@@ -88,7 +88,7 @@ def test_p1_max_global_connections(persistent_server: SecureFileTransferNode, mo
     # Patcha il limite globale per questo test
     max_conn = 5
     monkeypatch.setattr(
-        'secure_file_transfer_fixed.MAX_GLOBAL_CONNECTIONS',
+        'sft.MAX_GLOBAL_CONNECTIONS',
         max_conn
     )
     # (FIX 2.1) Rimosso:

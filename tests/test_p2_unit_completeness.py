@@ -197,7 +197,7 @@ def test_p2_filesystem_readonly_directory(tmp_path: Path, caplog: pytest.LogCapt
     server = SecureFileTransferNode(mode='server', host='127.0.0.1', port=0)
     
     # Patcha la costante OUTPUT_DIR *prima* che il server la usi
-    with patch('secure_file_transfer_fixed.OUTPUT_DIR', readonly_dir):
+    with patch('sft.OUTPUT_DIR', readonly_dir):
         
         server_thread = threading.Thread(target=server.start_server, daemon=True)
         server_thread.start()

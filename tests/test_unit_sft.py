@@ -115,25 +115,23 @@ def test_sanitize_long_filename(protocol_instance):
 
 ### 3. Test SecureKeyManager
 def test_keymanager_handshake_symmetric():
-    """Testa che due manager possano stabilire un segreto condiviso."""
-    
+    """Testa che due manager possano stabilire un segreto condiviso usando ECDH (X25519)."""
+
     manager_client = SecureKeyManager("client")
     manager_server = SecureKeyManager("server")
-    
-    # 1. Ottieni le chiavi pubbliche
-    client_pub_pem = manager_client.get_public_key_pem()
-    server_pub_pem = manager_server.get_public_key_pem()
-    
-    # 2. Il client stabilisce il segreto usando la chiave del server
-    encrypted_secret = manager_client.establish_shared_secret(server_pub_pem)
-    
-    # 3. Il server decifra il segreto
-    manager_server.decrypt_shared_secret(encrypted_secret)
-    
-    # 4. Verifica
+
+    # 1. Generazione e scambio delle chiavi pubbliche X25519
+    client_pub_bytes = manager_client.generate_ephemeral_key()
+    server_pub_bytes = manager_server.generate_ephemeral_key()
+
+    # 2. Entrambi computano il segreto condiviso usando la chiave pubblica dell'altro
+    manager_client.compute_shared_secret(server_pub_bytes)
+    manager_server.compute_shared_secret(client_pub_bytes)
+
+    # 3. Verifica che entrambi abbiano derivato lo stesso segreto condiviso
     assert manager_client.shared_secret is not None
     assert manager_server.shared_secret is not None
-    
+
     # Devono avere lo stesso segreto HMAC e la stessa chiave AES
     assert manager_client.shared_secret == manager_server.shared_secret
     assert manager_client.current_key == manager_server.current_key

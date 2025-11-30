@@ -319,7 +319,7 @@ def test_e2e_protocol_invalid_signature(secure_server):
         finally:
             sock.close()
 
-@patch('secure_file_transfer_fixed.datetime')
+@patch('sft.datetime')
 def test_e2e_protocol_expired_timestamp(mock_datetime, secure_server):
     """TEST 7: Verifica che il server rifiuti un timestamp scaduto."""
     host, port = secure_server

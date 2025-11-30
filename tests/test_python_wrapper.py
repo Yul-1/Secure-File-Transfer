@@ -75,7 +75,7 @@ def test_validate_size(base_config):
 
 # 2. Test di Fallback e Selezione Modulo
 
-@patch('python_wrapper_fixed.C_MODULE_AVAILABLE', True)
+@patch('python_wrapper.C_MODULE_AVAILABLE', True)
 def test_mode_c_module_default(crypto_data, base_config):
     """
     Testa la modalità predefinita: C_MODULE_AVAILABLE=True, use_hardware_acceleration=True.
@@ -95,7 +95,7 @@ def test_mode_c_module_default(crypto_data, base_config):
     assert crypto.stats['python_fallback'] == 0
     assert crypto.stats['errors'] == 0
 
-@patch('python_wrapper_fixed.C_MODULE_AVAILABLE', False)
+@patch('python_wrapper.C_MODULE_AVAILABLE', False)
 def test_mode_python_fallback_module_missing(crypto_data, base_config):
     """
     Testa la modalità fallback: C_MODULE_AVAILABLE=False.
@@ -115,7 +115,7 @@ def test_mode_python_fallback_module_missing(crypto_data, base_config):
     assert crypto.stats['python_fallback'] > 0 #
     assert crypto.stats['errors'] == 0
 
-@patch('python_wrapper_fixed.C_MODULE_AVAILABLE', True)
+@patch('python_wrapper.C_MODULE_AVAILABLE', True)
 def test_mode_python_fallback_config_disabled(crypto_data):
     """
     Testa la modalità fallback: C_MODULE_AVAILABLE=True, ma config.use_hardware_acceleration=False.
@@ -136,8 +136,8 @@ def test_mode_python_fallback_config_disabled(crypto_data):
     assert crypto.stats['python_fallback'] > 0 #
     assert crypto.stats['errors'] == 0
 
-@patch('python_wrapper_fixed.crypto_c.aes_gcm_encrypt', MagicMock(side_effect=Exception("Simulated C Failure")))
-@patch('python_wrapper_fixed.C_MODULE_AVAILABLE', True)
+@patch('python_wrapper.crypto_c.aes_gcm_encrypt', MagicMock(side_effect=Exception("Simulated C Failure")))
+@patch('python_wrapper.C_MODULE_AVAILABLE', True)
 def test_mode_python_fallback_on_c_error(crypto_data, base_config):
     """
     Testa la modalità fallback: Il modulo C è disponibile ma solleva un'eccezione.
@@ -188,7 +188,7 @@ def test_key_cache_derivation_and_retrieval():
     
     assert len(key1) == AES_KEY_SIZE
 
-@patch('python_wrapper_fixed._clear_memory')
+@patch('python_wrapper._clear_memory')
 def test_key_cache_eviction_fifo(mock_clear_memory):
     """
     Testa che la cache rimuova la chiave più vecchia (FIFO) quando il limite
@@ -228,7 +228,7 @@ def test_key_cache_eviction_fifo(mock_clear_memory):
     # 4. Verifica che _clear_memory sia stata chiamata sulla chiave rimossa (K1)
     mock_clear_memory.assert_called_once_with(key1) #
 
-@patch('python_wrapper_fixed._clear_memory')
+@patch('python_wrapper._clear_memory')
 def test_key_cache_clear_on_eviction(mock_clear_memory):
     """
     Testa specificamente che _clear_memory venga invocato 
@@ -248,7 +248,7 @@ def test_key_cache_clear_on_eviction(mock_clear_memory):
     mock_clear_memory.assert_called_once_with(key1)
 
 # Aggiungiamo un test per la funzione clear_key_cache che abbiamo aggiunto
-@patch('python_wrapper_fixed._clear_memory')
+@patch('python_wrapper._clear_memory')
 def test_wrapper_clear_key_cache(mock_clear_memory):
     """
     Testa che clear_key_cache() svuoti la cache e chiami
