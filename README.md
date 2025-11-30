@@ -207,7 +207,7 @@ export CPPFLAGS="-I$(brew --prefix openssl)/include"
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Yul-1/SFT.git
+git clone https://github.com/Yul-1/Secure-File-Transfer
 cd SFT
 
 # 2. Create virtual environment (recommended)
@@ -428,7 +428,7 @@ SFT/
 
 ```bash
 # Setup development environment
-git clone https://github.com/Yul-1/SFT.git
+git clone https://github.com/Yul-1/Secure-File-Transfer
 cd SFT
 python3 -m venv venv
 source venv/bin/activate
