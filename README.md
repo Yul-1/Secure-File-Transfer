@@ -1,4 +1,4 @@
-# 🛡️ AegisTransfer - Secure File Transfer System
+# 🛡️ Secure File Transfer System
 
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
 [![Version](https://img.shields.io/badge/version-2.6-blue)](https://github.com/Yul-1/SFT)
@@ -6,102 +6,102 @@
 [![Tests](https://img.shields.io/badge/tests-comprehensive-success)](https://github.com/Yul-1/SFT)
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/Yul-1/SFT)
 
-## 📋 Indice
+## 📋 Table of Contents
 
-- [Panoramica](#-panoramica)
-- [Caratteristiche Principali](#-caratteristiche-principali)
-- [Architettura del Sistema](#-architettura-del-sistema)
-- [Sicurezza](#-sicurezza)
-- [Installazione](#-installazione)
-- [Utilizzo](#-utilizzo)
-- [Test](#-test)
+- [Overview](#-overview)
+- [Key Features](#-key-features)
+- [System Architecture](#-system-architecture)
+- [Security](#-security)
+- [Installation](#-installation)
+- [Usage](#-usage)
+- [Testing](#-testing)
 - [Performance](#-performance)
-- [Sviluppo](#-sviluppo)
+- [Development](#-development)
 - [Roadmap](#-roadmap)
-- [Contribuire](#-contribuire)
-- [Licenza](#-licenza)
+- [Contributing](#-contributing)
+- [License](#-license)
 
-## 🎯 Panoramica
+## 🎯 Overview
 
-AegisTransfer è un sistema di trasferimento file **bidirezionale** e sicuro progettato da zero con un'architettura "security-first". Il progetto combina la velocità della crittografia hardware-accelerata in C con la sicurezza e la flessibilità di Python, creando una soluzione robusta per il trasferimento sicuro di file su reti non fidate.
+Secure File Transfer is a **bidirectional** secure file transfer system designed from the ground up with a "security-first" architecture. The project combines the speed of hardware-accelerated cryptography in C with the security and flexibility of Python, creating a robust solution for secure file transfer over untrusted networks.
 
-**Versione corrente: 2.6** - Supporto completo per upload, download e listing di file remoti.
+**Current version: 2.6** - Complete support for upload, download, and remote file listing.
 
-### Perché AegisTransfer?
+### Why Secure File Transfer?
 
-Mentre esistono protocolli consolidati come SCP e SFTP, AegisTransfer serve come studio approfondito sull'implementazione di software sicuro a più livelli. Il sistema implementa contromisure avanzate contro vulnerabilità comuni, offrendo un'alternativa moderna con focus particolare sulla sicurezza della memoria e sulla resistenza ad attacchi sofisticati.
+While established protocols like SCP and SFTP exist, Secure File Transfer serves as an in-depth study on implementing secure multi-layered software. The system implements advanced countermeasures against common vulnerabilities, offering a modern alternative with particular focus on memory security and resistance to sophisticated attacks.
 
-### Funzionalità Chiave v2.6
-- **Upload sicuro** di file verso il server
-- **Download sicuro** di file dal server
-- **Listing remoto** per visualizzare file disponibili
-- **Resume automatico** dei trasferimenti interrotti
-- **Crittografia end-to-end** con AES-256-GCM e RSA-4096
+### Key Features v2.6
+- **Secure upload** of files to the server
+- **Secure download** of files from the server
+- **Remote listing** to view available files
+- **Automatic resume** of interrupted transfers
+- **End-to-end encryption** with AES-256-GCM and RSA-4096
 
-## ✨ Caratteristiche Principali
+## ✨ Key Features
 
-### 🔐 Crittografia Avanzata
-- **AES-256-GCM** per cifratura simmetrica con autenticazione integrata
-- **RSA-4096 con OAEP** per scambio sicuro delle chiavi
-- **HMAC-SHA256** per firma e verifica dell'integrità dei messaggi
-- **PBKDF2** con 100.000 iterazioni per derivazione delle chiavi
+### 🔐 Advanced Encryption
+- **AES-256-GCM** for symmetric encryption with integrated authentication
+- **RSA-4096 with OAEP** for secure key exchange
+- **HMAC-SHA256** for message integrity signing and verification
+- **PBKDF2** with 100,000 iterations for key derivation
 
-### 🛡️ Protezioni di Sicurezza
-- **Anti-DoS**: Rate limiting intelligente e gestione delle connessioni
-- **Anti-Replay**: Sistema di rilevamento basato su timestamp e message ID
-- **Anti-Timing**: Confronti a tempo costante per prevenire side-channel attacks
-- **Path Traversal Protection**: Sanitizzazione rigorosa dei nomi file
-- **Memory Safety**: Pulizia sicura delle chiavi dalla memoria dopo l'uso
+### 🛡️ Security Protections
+- **Anti-DoS**: Intelligent rate limiting and connection management
+- **Anti-Replay**: Detection system based on timestamps and message IDs
+- **Anti-Timing**: Constant-time comparisons to prevent side-channel attacks
+- **Path Traversal Protection**: Strict filename sanitization
+- **Memory Safety**: Secure cleanup of keys from memory after use
 
 ### ⚡ Performance
-- **Accelerazione Hardware**: Modulo C compilato con ottimizzazioni native
-- **Fallback Automatico**: Sistema Python puro se il modulo C non è disponibile
-- **Chunking Efficiente**: Trasferimento ottimizzato per file di grandi dimensioni
-- **Resume Support**: Ripresa automatica dei trasferimenti interrotti
+- **Hardware Acceleration**: C module compiled with native optimizations
+- **Automatic Fallback**: Pure Python system if C module is unavailable
+- **Efficient Chunking**: Optimized transfer for large files
+- **Resume Support**: Automatic resumption of interrupted transfers
 
-### 🔄 Affidabilità
-- **Thread-Safe**: Architettura multi-thread con isolamento completo delle sessioni
-- **Bidirezionalità**: Upload, download e listing file remoti
-- **Validazione Protocollo**: Schema JSON rigoroso per tutti i messaggi
-- **Gestione Errori Robusta**: Recovery graceful da errori di rete e protocollo
-- **Logging Completo**: Sistema di log dettagliato con rotazione automatica
+### 🔄 Reliability
+- **Thread-Safe**: Multi-threaded architecture with complete session isolation
+- **Bidirectional**: Upload, download, and remote file listing
+- **Protocol Validation**: Strict JSON schema for all messages
+- **Robust Error Handling**: Graceful recovery from network and protocol errors
+- **Comprehensive Logging**: Detailed logging system with automatic rotation
 
-## 🏗️ Architettura del Sistema
+## 🏗️ System Architecture
 
-Il sistema è costruito su tre livelli interconnessi che lavorano in sinergia per fornire sicurezza e performance ottimali:
+The system is built on three interconnected layers that work in synergy to provide optimal security and performance:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Livello Protocollo                       │
-│              (secure_file_transfer_fixed.py)                │
-│  • Gestione connessioni TCP                                 │
-│  • Handshake RSA-OAEP                                       │
-│  • State machine del trasferimento                          │
-│  • Rate limiting e protezioni DoS                           │
+│                    Protocol Layer                           │
+│              (secure_file_transfer.py)                      │
+│  • TCP connection management                                │
+│  • RSA-OAEP handshake                                       │
+│  • Transfer state machine                                   │
+│  • Rate limiting and DoS protections                        │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                     Livello Wrapper                         │
-│                 (python_wrapper_fixed.py)                   │
-│  • API crittografica unificata                             │
-│  • Gestione fallback C/Python                              │
-│  • Cache sicura delle chiavi                               │
-│  • Statistiche e monitoring                                │
+│                     Wrapper Layer                           │
+│                 (crypto_wrapper.py)                         │
+│  • Unified cryptographic API                                │
+│  • C/Python fallback management                             │
+│  • Secure key cache                                         │
+│  • Statistics and monitoring                                │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                      Livello Core                           │
-│               (crypto-accelerator-fixed.c)                  │
-│  • Cifratura AES-256-GCM via OpenSSL                       │
-│  • Generazione numeri casuali sicuri                       │
-│  • Hashing SHA-256                                         │
-│  • Confronti tempo-costante                                │
+│                      Core Layer                             │
+│               (crypto_accelerator.c)                        │
+│  • AES-256-GCM encryption via OpenSSL                       │
+│  • Secure random number generation                          │
+│  • SHA-256 hashing                                          │
+│  • Constant-time comparisons                                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Flusso del Protocollo
+### Protocol Flow
 
 ```mermaid
 sequenceDiagram
@@ -138,40 +138,40 @@ sequenceDiagram
     C->>S: File ACK
 ```
 
-## 🔒 Sicurezza
+## 🔒 Security
 
-### Protezione Multi-Livello
+### Multi-Layer Protection
 
-Il sistema implementa una difesa in profondità con protezioni multiple a ogni livello:
+The system implements defense in depth with multiple protections at every layer:
 
-#### Livello di Rete
-- **Rate Limiting Adattivo**: Previene flood di connessioni e richieste
-- **Connection Pooling**: Limite massimo di 50 connessioni simultanee
-- **Socket Timeout**: 30 secondi per prevenire attacchi slowloris
-- **IP-based Filtering**: Tracking per-client delle richieste
+#### Network Layer
+- **Adaptive Rate Limiting**: Prevents connection and request flooding
+- **Connection Pooling**: Maximum limit of 50 simultaneous connections
+- **Socket Timeout**: 30 seconds to prevent slowloris attacks
+- **IP-based Filtering**: Per-client request tracking
 
-#### Livello di Protocollo
-- **Message Authentication**: Ogni pacchetto è firmato con HMAC-SHA256
-- **Replay Detection**: Coda FIFO di 1000 message ID per rilevare duplicati
-- **Timestamp Validation**: Tolleranza di 5 minuti per prevenire replay ritardati
-- **Schema Validation**: JSON Schema rigoroso per tutti i messaggi
+#### Protocol Layer
+- **Message Authentication**: Every packet is signed with HMAC-SHA256
+- **Replay Detection**: FIFO queue of 1000 message IDs to detect duplicates
+- **Timestamp Validation**: 5-minute tolerance to prevent delayed replays
+- **Schema Validation**: Strict JSON Schema for all messages
 
-#### Livello Crittografico
-- **Key Rotation**: Rotazione automatica delle chiavi ogni 300 secondi
-- **Perfect Forward Secrecy**: Nuove chiavi per ogni sessione
-- **Authenticated Encryption**: AES-GCM per confidenzialità e integrità
-- **Secure Random**: Generazione via OpenSSL RAND_bytes o secrets.token_bytes
+#### Cryptographic Layer
+- **Key Rotation**: Automatic key rotation every 300 seconds
+- **Perfect Forward Secrecy**: New keys for each session
+- **Authenticated Encryption**: AES-GCM for confidentiality and integrity
+- **Secure Random**: Generation via OpenSSL RAND_bytes or secrets.token_bytes
 
-#### Livello di Memoria
-- **Secure Zeroing**: Pulizia esplicita delle chiavi dalla memoria
-- **Buffer Limits**: Massimo 10MB per pacchetto per prevenire overflow
-- **Stack Protection**: Compilazione con -fstack-protector-strong
-- **FORTIFY_SOURCE**: Protezione runtime contro buffer overflow
+#### Memory Layer
+- **Secure Zeroing**: Explicit cleanup of keys from memory
+- **Buffer Limits**: Maximum 10MB per packet to prevent overflow
+- **Stack Protection**: Compilation with -fstack-protector-strong
+- **FORTIFY_SOURCE**: Runtime protection against buffer overflow
 
-### Mitigazioni Specifiche
+### Specific Mitigations
 
-| Vulnerabilità | Mitigazione Implementata |
-|--------------|---------------------------|
+| Vulnerability | Implemented Mitigation |
+|--------------|------------------------|
 | DoS/DDoS | Rate limiting, connection limits, timeout |
 | Replay Attack | Message ID tracking, timestamp validation |
 | Timing Attack | Constant-time comparison (CRYPTO_memcmp) |
@@ -180,9 +180,9 @@ Il sistema implementa una difesa in profondità con protezioni multiple a ogni l
 | Buffer Overflow | Size validation, FORTIFY_SOURCE |
 | MITM | RSA-4096 key exchange, certificate pinning (planned) |
 
-## 📦 Installazione
+## 📦 Installation
 
-### Prerequisiti
+### Prerequisites
 
 #### Ubuntu/Debian
 ```bash
@@ -199,161 +199,136 @@ export CPPFLAGS="-I$(brew --prefix openssl)/include"
 
 #### Windows
 ```powershell
-# Richiede Visual Studio Build Tools
-# Scarica da: https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022
+# Requires Visual Studio Build Tools
+# Download from: https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022
 ```
 
-### Installazione Standard
+### Standard Installation
 
 ```bash
-# 1. Clona il repository
+# 1. Clone the repository
 git clone https://github.com/Yul-1/SFT.git
 cd SFT
 
-# 2. Crea ambiente virtuale (raccomandato)
+# 2. Create virtual environment (recommended)
 python3 -m venv venv
 source venv/bin/activate  # Linux/macOS
-# oppure
+# or
 venv\Scripts\activate  # Windows
 
-# 3. Installa dipendenze Python
+# 3. Install Python dependencies
 pip install -r requirements.txt
 
-# 4. Compila modulo C (opzionale ma raccomandato)
-python3 python_wrapper_fixed.py --compile
+# 4. Compile C module (optional but recommended)
+python3 crypto_wrapper.py --compile
 
-# 5. Verifica installazione
-python3 python_wrapper_fixed.py --test
+# 5. Verify installation
+python3 crypto_wrapper.py --test
 ```
 
 
-## 🚀 Utilizzo
+## 🚀 Usage
 
-### Avvio del Server
+### Starting the Server
 
-#### Configurazione Base
+#### Basic Configuration
 ```bash
-# Avvia il server sulla porta predefinita (5555)
-python3 secure_file_transfer_fixed.py --mode server
+# Start server on default port (5555)
+python3 secure_file_transfer.py --mode server
 
-# Output atteso:
-# 2024-01-15 10:30:00 - INFO - Server listening on 0.0.0.0:5555...
-# 2024-01-15 10:30:00 - INFO - File verranno salvati in: /path/to/ricevuti
+# Start on specific port
+python3 secure_file_transfer.py --mode server --port 8080
+
+# Start on specific interface
+python3 secure_file_transfer.py --mode server --host 192.168.1.100 --port 5555
 ```
 
-#### Configurazione Avanzata
+#### Production Configuration
 ```bash
-# Server su IP e porta specifici
-python3 secure_file_transfer_fixed.py --mode server --host 192.168.1.100 --port 9999
-
-# Server con logging dettagliato (variabile d'ambiente)
-DEBUG=1 python3 secure_file_transfer_fixed.py --mode server
-
-# Server con directory output custom
-OUTPUT_DIR=/mnt/storage python3 secure_file_transfer_fixed.py --mode server
+# Production server with logging
+nohup python3 secure_file_transfer.py --mode server \
+    --host 0.0.0.0 \
+    --port 5555 > server.log 2>&1 &
 ```
 
-### Client - Operazioni Disponibili
+### Client Operations
 
-#### Upload File (Invio)
+#### Upload File
 ```bash
-# Invia un file a un server locale
-python3 secure_file_transfer_fixed.py --mode client \
-    --connect 127.0.0.1:5555 \
-    --file documento.pdf
+# Upload file to server
+python3 secure_file_transfer.py --mode client \
+    --connect 192.168.1.100:5555 \
+    --file /path/to/document.pdf
 
-# Invia a un server remoto
-python3 secure_file_transfer_fixed.py --mode client \
-    --connect server.example.com:9999 \
-    --file /path/to/large_archive.zip
+# Upload with progress
+python3 secure_file_transfer.py --mode client \
+    --connect server.example.com:5555 \
+    --file large_file.zip
 ```
 
-#### List File Remoti
+#### List Remote Files
 ```bash
-# Elenca tutti i file disponibili sul server
-python3 secure_file_transfer_fixed.py --mode client \
-    --connect 127.0.0.1:5555 \
+# List available files on server
+python3 secure_file_transfer.py --mode client \
+    --connect 192.168.1.100:5555 \
     --list
-
-# Output esempio:
-# File disponibili sul server:
-# - documento.pdf (1.2 MB)
-# - archive.zip (45.7 MB)
-# - report.docx (234 KB)
 ```
 
 #### Download File
 ```bash
-# Scarica un file specifico dal server
-python3 secure_file_transfer_fixed.py --mode client \
-    --connect 127.0.0.1:5555 \
-    --download documento.pdf
+# Download specific file
+python3 secure_file_transfer.py --mode client \
+    --connect 192.168.1.100:5555 \
+    --download document.pdf
 
-# Scarica in una directory specifica
-python3 secure_file_transfer_fixed.py --mode client \
-    --connect 127.0.0.1:5555 \
-    --download archive.zip \
-    --output /path/to/destination/
+# Download to specific directory
+python3 secure_file_transfer.py --mode client \
+    --connect 192.168.1.100:5555 \
+    --download backup.tar.gz \
+    --output /home/user/downloads/
 
-# Scarica con nome personalizzato
-python3 secure_file_transfer_fixed.py --mode client \
-    --connect 127.0.0.1:5555 \
-    --download report.docx \
-    --output ./downloads/monthly_report.docx
+# Resume interrupted download
+python3 secure_file_transfer.py --mode client \
+    --connect 192.168.1.100:5555 \
+    --download large_file.iso \
+    --output ./downloads/
 ```
 
-#### Script di Trasferimento Batch
+### Advanced Examples
+
+#### Bidirectional Secure Backup
 ```bash
-#!/bin/bash
-# transfer_batch.sh - Trasferisce multipli file
+# Backup server
+python3 secure_file_transfer.py --mode server --port 8888
 
-SERVER="192.168.1.100:5555"
-FILES=("file1.doc" "file2.pdf" "archive.zip")
-
-for file in "${FILES[@]}"; do
-    echo "Trasferendo $file..."
-    python3 secure_file_transfer_fixed.py --mode client \
-        --connect $SERVER \
-        --file "$file"
-    sleep 1
-done
-```
-
-### Esempi di Utilizzo Pratico
-
-#### Backup Sicuro Bidirezionale
-```bash
-# Server di backup
-python3 secure_file_transfer_fixed.py --mode server --port 8888
-
-# Client - invia backup
-python3 secure_file_transfer_fixed.py --mode client \
+# Client - send backup
+python3 secure_file_transfer.py --mode client \
     --connect backup-server:8888 \
     --file /path/to/backup.tar.gz
 
-# Client - recupera backup precedenti
-# 1. Lista i backup disponibili
-python3 secure_file_transfer_fixed.py --mode client \
+# Client - retrieve previous backups
+# 1. List available backups
+python3 secure_file_transfer.py --mode client \
     --connect backup-server:8888 \
     --list
 
-# 2. Scarica un backup specifico
-python3 secure_file_transfer_fixed.py --mode client \
+# 2. Download specific backup
+python3 secure_file_transfer.py --mode client \
     --connect backup-server:8888 \
     --download backup_2024-11-22.tar.gz \
     --output /restore/
 ```
 
-#### Trasferimento con Monitoraggio
+#### Transfer with Monitoring
 ```python
 # monitor_transfer.py
 import subprocess
 import time
 
 def transfer_with_monitoring(server, file_path):
-    """Trasferisce un file con monitoraggio dello stato"""
+    """Transfer file with status monitoring"""
     cmd = [
-        "python3", "secure_file_transfer_fixed.py",
+        "python3", "secure_file_transfer.py",
         "--mode", "client",
         "--connect", server,
         "--file", file_path
@@ -366,184 +341,184 @@ def transfer_with_monitoring(server, file_path):
         print(".", end="", flush=True)
     
     if process.returncode == 0:
-        print("\n✅ Trasferimento completato con successo!")
+        print("\n✅ Transfer completed successfully!")
     else:
-        print(f"\n❌ Errore nel trasferimento: {process.stderr.read()}")
+        print(f"\n❌ Transfer error: {process.stderr.read()}")
 
-# Uso
+# Usage
 transfer_with_monitoring("192.168.1.50:5555", "important_data.db")
 ```
 
-## 🧪 Test
+## 🧪 Testing
 
-### Suite di Test Completa
+### Comprehensive Test Suite
 
-Il progetto include una suite di test comprehensiva con oltre 50 test case:
+The project includes a comprehensive test suite with over 50 test cases:
 
 ```bash
-# Esegui tutti i test
+# Run all tests
 python3 -m pytest tests/ -v
 
-# Test specifici per categoria
-python3 -m pytest tests/test_crypto_accelerator.py -v  # Test modulo C
-python3 -m pytest tests/test_python_wrapper.py -v      # Test wrapper
-python3 -m pytest tests/test_security_protocol.py -v   # Test protocollo
-python3 -m pytest tests/test_dos_mitigation.py -v      # Test anti-DoS
-python3 -m pytest tests/test_concurrency.py -v         # Test concorrenza
+# Category-specific tests
+python3 -m pytest tests/test_crypto_accelerator.py -v  # C module tests
+python3 -m pytest tests/test_python_wrapper.py -v      # Wrapper tests
+python3 -m pytest tests/test_security_protocol.py -v   # Protocol tests
+python3 -m pytest tests/test_dos_mitigation.py -v      # Anti-DoS tests
+python3 -m pytest tests/test_concurrency.py -v         # Concurrency tests
 ```
 
-### Test di Performance
+### Performance Testing
 
 ```bash
-# Benchmark crittografico
-python3 python_wrapper_fixed.py --benchmark
+# Cryptographic benchmark
+python3 crypto_wrapper.py --benchmark
 
-# Test di trasferimento file grandi
+# Large file transfer test
 dd if=/dev/urandom of=test_1gb.bin bs=1M count=1024
-time python3 secure_file_transfer_fixed.py --mode client \
+time python3 secure_file_transfer.py --mode client \
     --connect localhost:5555 --file test_1gb.bin
 ```
 
 ## 📊 Performance
 
-### Benchmark Comparativi
+### Comparative Benchmarks
 
-| Operazione | Modulo C | Python Puro | Speedup |
-|------------|----------|-------------|---------|
+| Operation | C Module | Pure Python | Speedup |
+|-----------|----------|-------------|---------|
 | AES-256-GCM (10MB) | 0.042s | 0.385s | 9.2x |
 | SHA-256 (100MB) | 0.156s | 1.823s | 11.7x |
 | Random Gen (1MB) | 0.008s | 0.031s | 3.9x |
 | File Transfer (100MB) | 2.3s | 8.7s | 3.8x |
 
-### Ottimizzazioni Implementate
+### Implemented Optimizations
 
-- **Zero-copy I/O**: Utilizzo di sendfile() dove disponibile
-- **Buffer pooling**: Riutilizzo dei buffer per ridurre allocazioni
-- **Parallel processing**: Thread separati per I/O e crittografia
-- **Native optimizations**: Compilazione con -O3 -march=native
+- **Zero-copy I/O**: Use of sendfile() where available
+- **Buffer pooling**: Buffer reuse to reduce allocations
+- **Parallel processing**: Separate threads for I/O and cryptography
+- **Native optimizations**: Compilation with -O3 -march=native
 
-## 🔧 Sviluppo
+## 🔧 Development
 
-### Struttura del Progetto
+### Project Structure
 
 ```
 SFT/
-├── secure_file_transfer_fixed.py  # Protocollo principale (v2.6)
-├── python_wrapper_fixed.py        # Wrapper crittografico
-├── crypto-accelerator-fixed.c     # Modulo C (sorgente)
-├── crypto_accelerator.so          # Modulo C compilato
-├── requirements.txt               # Dipendenze Python
-├── tests/                         # Suite di test
-│   ├── conftest.py               # Fixtures pytest
+├── secure_file_transfer.py        # Main protocol (v2.6)
+├── crypto_wrapper.py               # Cryptographic wrapper
+├── crypto_accelerator.c            # C module (source)
+├── crypto_accelerator.so           # Compiled C module
+├── requirements.txt                # Python dependencies
+├── tests/                          # Test suite
+│   ├── conftest.py                # Pytest fixtures
 │   ├── test_crypto_accelerator.py
 │   ├── test_python_wrapper.py
 │   ├── test_security_protocol.py
 │   ├── test_dos_mitigation.py
 │   ├── test_concurrency.py
 │   ├── test_unit_sft.py
-│   ├── test_p0_security.py       # Test sicurezza priorità 0
-│   ├── test_p1_robustness.py     # Test robustezza priorità 1
-│   ├── test_p2_completeness.py   # Test completezza priorità 2
+│   ├── test_p0_security.py        # Priority 0 security tests
+│   ├── test_p1_robustness.py      # Priority 1 robustness tests
+│   ├── test_p2_completeness.py    # Priority 2 completeness tests
 │   └── test_p2_unit_completeness.py
-├── ricevuti/                      # Directory output (creata runtime)
-└── README.md                      # Questo file
+├── received/                       # Output directory (created at runtime)
+└── README.md                       # This file
 ```
 
-### Ambiente di Sviluppo
+### Development Environment
 
 ```bash
-# Setup ambiente sviluppo
+# Setup development environment
 git clone https://github.com/Yul-1/SFT.git
 cd SFT
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Compilazione debug del modulo C
+# Debug compilation of C module
 gcc -shared -fPIC -g -O0 -DDEBUG \
-    crypto-accelerator-fixed.c -o crypto_accelerator.so -lcrypto
+    crypto_accelerator.c -o crypto_accelerator.so -lcrypto
 
-# Run con debug logging
-DEBUG=1 python3 secure_file_transfer_fixed.py --mode server --debug
+# Run with debug logging
+DEBUG=1 python3 secure_file_transfer.py --mode server --debug
 ```
 
-### Linee Guida per Contribuire
+### Contributing Guidelines
 
-1. **Fork** il repository
-2. **Crea** un branch per la feature (`git checkout -b feature/AmazingFeature`)
-3. **Commit** i cambiamenti (`git commit -m 'Add AmazingFeature'`)
-4. **Push** al branch (`git push origin feature/AmazingFeature`)
-5. **Apri** una Pull Request
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/AmazingFeature`)
+3. **Commit** your changes (`git commit -m 'Add AmazingFeature'`)
+4. **Push** to the branch (`git push origin feature/AmazingFeature`)
+5. **Open** a Pull Request
 
-#### Standard di Codice
+#### Code Standards
 
-- **Python**: PEP 8 con line length 100
+- **Python**: PEP 8 with line length 100
 - **C**: Linux kernel style
-- **Test**: Minimo 80% coverage per nuove feature
-- **Documentazione**: Docstrings per tutte le funzioni pubbliche
+- **Tests**: Minimum 80% coverage for new features
+- **Documentation**: Docstrings for all public functions
 
 ## 🗺️ Roadmap
 
-### Versione 2.1 ✅
-- [x] Implementazione base client-server
-- [x] Crittografia AES-256-GCM
-- [x] Handshake RSA-4096
-- [x] Protezione anti-DoS base
-- [x] Test suite completa
+### Version 2.1 ✅
+- [x] Basic client-server implementation
+- [x] AES-256-GCM encryption
+- [x] RSA-4096 handshake
+- [x] Basic anti-DoS protection
+- [x] Complete test suite
 
-### Versione 2.5 ✅
-- [x] Thread safety completo
-- [x] Resume dei trasferimenti
-- [x] Fallback Python automatico
+### Version 2.5 ✅
+- [x] Complete thread safety
+- [x] Transfer resume
+- [x] Automatic Python fallback
 
-### Versione 2.6 ✅ (Corrente)
-- [x] Funzionalità bidirezionale (upload e download)
-- [x] Comando `--list` per elencare file remoti
-- [x] Comando `--download` per scaricare file dal server
-- [x] Output directory personalizzabile
-- [x] Suite di test estesa con priorità (P0, P1, P2)
+### Version 2.6 ✅ (Current)
+- [x] Bidirectional functionality (upload and download)
+- [x] `--list` command to list remote files
+- [x] `--download` command to download files from server
+- [x] Customizable output directory
+- [x] Extended test suite with priorities (P0, P1, P2)
 
-### Versione 3.0 📋
-- [ ] GUI con PyQt6
-- [ ] Trasferimenti multi-file simultanei
-- [ ] Autenticazione certificati X.509
-- [ ] Compressione pre-trasferimento
-- [ ] Trasferimento directory ricorsivo
-- [ ] API REST per integrazione
+### Version 3.0 📋
+- [ ] GUI with PyQt6
+- [ ] Simultaneous multi-file transfers
+- [ ] X.509 certificate authentication
+- [ ] Pre-transfer compression
+- [ ] Recursive directory transfer
+- [ ] REST API for integration
 - [ ] Docker container
 
-### Versione 4.0 🔮
-- [ ] Supporto IPv6 completo
-- [ ] Trasferimento peer-to-peer
-- [ ] Crittografia post-quantum (Kyber)
-- [ ] Blockchain per audit log
+### Version 4.0 🔮
+- [ ] Complete IPv6 support
+- [ ] Peer-to-peer transfer
+- [ ] Post-quantum cryptography (Kyber)
+- [ ] Blockchain for audit log
 - [ ] Mobile app (Android/iOS)
 
-### Feature Sperimentali 🧪
-- [ ] WebRTC per NAT traversal
-- [ ] Machine learning per anomaly detection
+### Experimental Features 🧪
+- [ ] WebRTC for NAT traversal
+- [ ] Machine learning for anomaly detection
 - [ ] Hardware security module (HSM) support
 - [ ] Distributed storage integration
 
-## 🤝 Contribuire
+## 🤝 Contributing
 
-Contributi, issues e feature requests sono benvenuti! Sentiti libero di controllare la [pagina issues](https://github.com/Yul-1/SFT/issues).
+Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/Yul-1/SFT/issues).
 
 ### Top Contributors
-- **@Yul-1** - Creatore e maintainer principale
-- **[Il tuo nome qui]** - Contribuisci e appari in questa lista!
+- **@Yul-1** - Creator and main maintainer
+- **[Your name here]** - Contribute and appear in this list!
 
-## 📝 Licenza
+## 📝 License
 
-Questo progetto è distribuito sotto licenza MIT.
+This project is distributed under the MIT License.
 
-## 🙏 Riconoscimenti
+## 🙏 Acknowledgments
 
-- **OpenSSL** per le primitive crittografiche
-- **Python Cryptography** per il fallback
-- La community open source per il feedback e i suggerimenti
+- **OpenSSL** for cryptographic primitives
+- **Python Cryptography** for fallback
+- The open source community for feedback and suggestions
 
-## 📞 Contatti
+## 📞 Contact
 
 - **GitHub**: [@Yul-1](https://github.com/Yul-1)
 - **Issues**: [GitHub Issues](https://github.com/Yul-1/SFT/issues)
@@ -552,8 +527,8 @@ Questo progetto è distribuito sotto licenza MIT.
 
 <div align="center">
   
-**[⬆ Torna all'inizio](#-aegistransfer---secure-file-transfer-system)**
+**[⬆ Back to top](#-secure-file-transfer-system)**
 
-Made with ❤️ and 🔒 by the AegisTransfer Team
+Made with ❤️ and 🔒 by the Secure File Transfer Team
 
 </div>

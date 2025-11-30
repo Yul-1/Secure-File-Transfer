@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-crypto_wrapper_fixed.py - Wrapper Python sicuro per il modulo C
-Versione corretta con validazione e gestione errori robusta
+crypto_wrapper.py - Secure Python wrapper for the C module
+Robust validation and error handling
 """
 
 import os
@@ -27,23 +27,19 @@ import json
 from contextlib import contextmanager
 from logging.handlers import RotatingFileHandler
 
-# Prova a importare il modulo C compilato
 try:
     import crypto_accelerator as crypto_c 
     C_MODULE_AVAILABLE = True
-    # logger created after handler setup
 except ImportError as e:
     C_MODULE_AVAILABLE = False
 
-# Costanti di sicurezza
-MAX_BUFFER_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_BUFFER_SIZE = 10 * 1024 * 1024
 MIN_BUFFER_SIZE = 1
-AES_KEY_SIZE = 32  # AES-256
-AES_NONCE_SIZE = 12  # GCM
+AES_KEY_SIZE = 32
+AES_NONCE_SIZE = 12
 AES_TAG_SIZE = 16
 DEFAULT_LOGFILE = "crypto_wrapper.log"
 
-# Setup logging sicuro con rotazione
 logger = logging.getLogger("crypto_wrapper")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
@@ -58,7 +54,6 @@ if not logger.handlers:
 if C_MODULE_AVAILABLE:
     logger.info("C acceleration module loaded successfully")
 
-# Utility
 def _clear_memory(data: bytes) -> None:
     """
     Pulizia sicura della memoria (Best-Effort in Python) per i dati sensibili.
@@ -75,11 +70,11 @@ def _clear_memory(data: bytes) -> None:
                 temp[i] = 0
             del temp
     except Exception:
-        pass # Best effort
+        pass
 
 @dataclass
 class SecurityConfig:
-    """Configurazione di sicurezza validata"""
+    """Validated security configuration"""
     encryption_algorithm: str = "AES-256-GCM"
     key_derivation: str = "PBKDF2"
     key_rotation_interval: int = field(default=300)
@@ -96,53 +91,48 @@ class SecurityConfig:
 
 class SecureCrypto:
     """
-    Wrapper crittografico sicuro con fallback robusto e cache chiavi sicura.
+    Secure cryptographic wrapper with robust fallback and safe key caching.
     """
     
     def __init__(self, config: Optional[SecurityConfig] = None):
-        """ Inizializza il wrapper con configurazione sicura """
+        """ Initialize wrapper with secure configuration """
         self.config = config or SecurityConfig()
         self.use_c = self.config.use_hardware_acceleration and C_MODULE_AVAILABLE
         self._lock = threading.RLock()
         
-        # Statistiche thread-safe
         self.stats = {
             'encryptions': 0, 'decryptions': 0, 'hashes': 0,
             'c_module_used': 0, 'python_fallback': 0, 'errors': 0
         }
         
-        # 🟢 CORREZIONE: Cache chiavi con limite e pulizia.
-        # Usa un dizionario per la cache e una lista per l'ordine LRU/FIFO
         self._key_cache: Dict[str, bytes] = {} 
         self._key_cache_order: list[str] = [] 
         
         logger.info(f"SecureCrypto initialized (C module: {self.use_c})")
     
     def _validate_size(self, size: int, name: str = "buffer") -> None:
-        """Validazione dimensioni buffer (DoS)"""
+        """Buffer size validation (DoS protection)"""
         if size < MIN_BUFFER_SIZE or size > MAX_BUFFER_SIZE:
             raise ValueError(f"Invalid {name} size: {size}. Must be between {MIN_BUFFER_SIZE} and {MAX_BUFFER_SIZE} bytes.")
     
     @contextmanager
     def _secure_operation(self, operation_name: str):
-        """Context manager per operazioni sicure"""
+        """Context manager for secure operations"""
         start_time = time.perf_counter()
         try:
             yield
         except Exception as e:
             with self._lock:
                 self.stats['errors'] += 1
-            # Sanitizza il log di errore
             error_message = str(e).split('\n')[0]
             logger.error(f"Error in {operation_name}: {error_message}")
             raise
         finally:
             duration = time.perf_counter() - start_time
-            # Non loggare in modo dettagliato per evitare side-channel nel log
             logger.debug(f"{operation_name} took {duration:.6f}s")
     
     def generate_random(self, num_bytes: int) -> bytes:
-        """ Genera bytes casuali sicuri """
+        """ Generate secure random bytes """
         self._validate_size(num_bytes, "Random bytes")
         
         with self._secure_operation("generate_random"):
@@ -160,12 +150,11 @@ class SecureCrypto:
     
     def derive_key(self, password: bytes, salt: bytes, 
                    key_length: int = AES_KEY_SIZE) -> bytes:
-        """ Deriva una chiave da password con PBKDF2 """
+        """ Derive key from password using PBKDF2 """
         if len(password) < 8 or len(salt) < 8:
             raise ValueError("Password and salt must be at least 8 bytes.")
             
         with self._secure_operation("derive_key"):
-            # Usa PBKDF2HMAC correttamente
             kdf = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
                 length=key_length,
@@ -176,25 +165,22 @@ class SecureCrypto:
             
             key = kdf.derive(password)
             
-            # 🟢 CORREZIONE: Cache chiavi limitata e pulita
             with self._lock:
                 key_id = hashlib.sha256(password + salt).hexdigest()
                 
-                # Rimuove la chiave più vecchia se il limite è raggiunto (FIFO/LRU)
                 if len(self._key_cache) >= self.config.max_key_cache:
                     oldest_id = self._key_cache_order.pop(0)
                     old_key = self._key_cache.pop(oldest_id, b'')
-                    _clear_memory(old_key) # Pulizia sicura
+                    _clear_memory(old_key)
                     
                 if key_id not in self._key_cache:
-                    # memorizza una copia per essere sicuri che l'oggetto non venga mutato esternamente
                     self._key_cache[key_id] = bytes(key)
                     self._key_cache_order.append(key_id)
             
             return key
 
     def get_key_from_cache(self, password: bytes, salt: bytes) -> Optional[bytes]:
-        """Recupera la chiave dalla cache per l'ID derivato"""
+        """Retrieve key from cache for derived ID"""
         key_id = hashlib.sha256(password + salt).hexdigest()
         with self._lock:
             return self._key_cache.get(key_id)
@@ -209,25 +195,21 @@ class SecureCrypto:
                 self._key_cache[key_id] = bytes(key)
                 self._key_cache_order.append(key_id)
 
-    # --- INIZIO CORREZIONE ---
     def clear_key_cache(self):
         """
-        Svuota completamente la cache delle chiavi, pulendo
-        in modo sicuro ogni chiave memorizzata.
+        Completely flush key cache, securely cleaning
+        every stored key.
         """
         with self._lock:
             logger.debug(f"Clearing {len(self._key_cache)} keys from cache.")
-            # Itera e pulisci in modo sicuro
             for key in self._key_cache.values():
                 _clear_memory(key)
             
-            # Svuota le strutture
             self._key_cache.clear()
             self._key_cache_order.clear()
-    # --- FINE CORREZIONE ---
 
     def encrypt_aes_gcm(self, data: bytes, key: bytes, iv: bytes) -> Tuple[bytes, bytes]:
-        """ Cifratura AES-256-GCM con fallback """
+        """ AES-256-GCM encryption with fallback """
         self._validate_size(len(data), "Plaintext")
         
         with self._secure_operation("encrypt"):
@@ -239,9 +221,8 @@ class SecureCrypto:
                 except Exception as e:
                     logger.debug(f"C module failed for encrypt, falling back: {e}")
                     with self._lock:
-                        self.stats['errors'] += 1 # Registra l'errore C
+                        self.stats['errors'] += 1
             
-            # Fallback Python
             with self._lock:
                 self.stats['python_fallback'] += 1
             
@@ -255,7 +236,7 @@ class SecureCrypto:
             return ciphertext, tag
 
     def decrypt_aes_gcm(self, ciphertext: bytes, key: bytes, iv: bytes, tag: bytes) -> bytes:
-        """ Decifratura AES-256-GCM con fallback """
+        """ AES-256-GCM decryption with fallback """
         self._validate_size(len(ciphertext), "Ciphertext")
 
         with self._secure_operation("decrypt"):
@@ -267,8 +248,7 @@ class SecureCrypto:
                 except Exception as e:
                     logger.debug(f"C module failed for decrypt, falling back: {e}")
                     with self._lock:
-                        self.stats['errors'] += 1 # Registra l'errore C
-            # Fallback Python
+                        self.stats['errors'] += 1
             with self._lock:
                 self.stats['python_fallback'] += 1
             
@@ -283,25 +263,22 @@ class SecureCrypto:
                 raise ValueError(f"Decryption/Authentication failed: {e}")
                 
     def compare_digest(self, a: bytes, b: bytes) -> bool:
-        """ Confronto in tempo costante per prevenire timing attacks """
+        """ Constant-time comparison to prevent timing attacks """
         if self.use_c:
             try:
                 return crypto_c.compare_digest(a, b)
             except Exception as e:
                 logger.debug(f"C module failed for compare_digest, falling back: {e}")
         
-        # Fallback Python (già sicuro)
         return hmac.compare_digest(a, b)
 
 
 def compile_c_module():
-    """Compila il modulo C con flag di sicurezza (DoS/Stack-smashing)"""
+    """Compile C module with security flags (DoS/stack-smashing protection)"""
     print("Attempting to compile C module...")
     
-    # Assumiamo che il file C sia nominato 'crypto-accelerator-fixed.c' e lo rinominiamo temporaneamente
     c_file_name = "crypto-accelerator-fixed.c"
     
-    # Trova il percorso corretto per Python.h
     include_path = sysconfig.get_path('include')
 
     compile_cmd = [
@@ -310,7 +287,7 @@ def compile_c_module():
         "-march=native", 
         "-D_FORTIFY_SOURCE=2", 
         "-fstack-protector-strong",
-        "-Wl,-z,relro,-z,now", # Hardenings per Linux/ELF
+        "-Wl,-z,relro,-z,now",
         c_file_name, 
         "-o", "crypto_accelerator.so",
         "-lcrypto",
@@ -320,7 +297,6 @@ def compile_c_module():
         compile_cmd[0] = "clang"
         compile_cmd[1] = "-dynamiclib"
         compile_cmd[-2] = "crypto_accelerator.dylib"
-        # Rimuovi flag non supportati
         compile_cmd = [c for c in compile_cmd if not c.startswith("-Wl,-z")]
 
     elif platform.system() == "Windows":
@@ -338,17 +314,14 @@ def compile_c_module():
         print("GCC/Clang not found. Please install build tools.")
         return False
 
-# Test/benchmark helpers (unchanged logic, safe)
 def test_integration():
-    """Esegue test di integrazione per verificare il fallback"""
+    """Run integration tests to verify fallback"""
     print("\n--- Running Integration Tests ---")
     crypto = SecureCrypto()
     
-    # Test 1: Generazione random
     key = crypto.generate_random(AES_KEY_SIZE)
     print(f"Random key generated (len: {len(key)}) using {'C' if crypto.stats['c_module_used'] > 0 else 'Python'}")
     
-    # Test 2: Cifratura/Decifratura
     plaintext = b"This is a secret message" * 10
     iv = crypto.generate_random(AES_NONCE_SIZE)
     
@@ -361,7 +334,6 @@ def test_integration():
         print(f"Encryption/Decryption failed: {e}")
         return
         
-    # Test 3: Fallimento di autenticazione
     try:
         crypto.decrypt_aes_gcm(ciphertext, key, iv, b'\x00' * AES_TAG_SIZE)
         assert False, "Authentication tag check failed to raise error"
@@ -371,15 +343,14 @@ def test_integration():
     print("--- Tests Complete ---")
 
 def benchmark_comparison():
-    """Esegue un semplice benchmark C vs Python"""
+    """Run simple C vs Python benchmark"""
     print("\n--- Running Benchmark ---")
     crypto = SecureCrypto()
-    data_size = 10 * 1024 * 1024 # 10MB
+    data_size = 10 * 1024 * 1024
     data = os.urandom(data_size)
     key = os.urandom(AES_KEY_SIZE)
     iv = os.urandom(AES_NONCE_SIZE)
     
-    # Esegui 5 iterazioni
     iterations = 5
 
     def run_op(func, label):
