@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Secure Encrypted File Transfer System
-Enhanced security implementation
+Enhanced security implementation: ECDH (X25519) + Ed25519
 Thread-safe state management
 Bidirectional transfer support
 """
@@ -25,9 +25,9 @@ from typing import Tuple, Optional, Dict, Any, Set
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
+# Rimosso RSA, aggiunto curve ellittiche
+from cryptography.hazmat.primitives.asymmetric import x25519, ed25519
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import padding as sym_padding
 from datetime import datetime, timedelta, timezone
 from collections import deque
 from jsonschema import validate, ValidationError
@@ -153,37 +153,75 @@ class RateLimiter:
         self._running = False
 
 class SecureKeyManager:
-    """Secure key management with rotation and memory cleanup"""
+    """
+    Secure key management with ECDH (X25519) and Ed25519.
+    Implements Perfect Forward Secrecy and DoS mitigation.
+    """
     
-    def __init__(self, identity: str):
+    def __init__(self, identity: str, identity_key: Optional[ed25519.Ed25519PrivateKey] = None):
         self.identity = identity
         self.current_key = None
         self.key_id = None
         self.key_timestamp = None
-        self.previous_keys: deque[Dict[str, Any]] = deque(maxlen=3) 
-        self.rsa_private = None
-        self.rsa_public = None
-        self.peer_public_key = None
+        self.previous_keys: deque[Dict[str, Any]] = deque(maxlen=3)
+        
+        # Identity Keys (Ed25519) - Long Term
+        # Se siamo il server, usiamo la chiave passata. Se client, generiamo (o restiamo anonimi per ora).
+        if identity_key:
+            self.identity_private = identity_key
+            self.identity_public = identity_key.public_key()
+        else:
+            # Client / Fallback generation
+            self.identity_private = ed25519.Ed25519PrivateKey.generate()
+            self.identity_public = self.identity_private.public_key()
+            
+        # Ephemeral Keys (X25519) - Session
+        self.ephemeral_private = None
+        self.ephemeral_public = None
+        
         self.shared_secret = None
         self._lock = threading.RLock()
-        self._generate_rsa_keypair()
         self.failed_auth_attempts = 0
         
-    def _generate_rsa_keypair(self):
-        """Generate RSA 4096-bit keypair"""
-        self.rsa_private = rsa.generate_private_key(
-            public_exponent=65537,
-            key_size=4096,
-            backend=default_backend()
+    def generate_ephemeral_key(self) -> bytes:
+        """Generate ephemeral X25519 keypair for the session."""
+        with self._lock:
+            self.ephemeral_private = x25519.X25519PrivateKey.generate()
+            self.ephemeral_public = self.ephemeral_private.public_key()
+            
+            return self.ephemeral_public.public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw
+            )
+
+    def get_identity_public_bytes(self) -> bytes:
+        """Return Identity Public Key (Ed25519) in Raw format."""
+        return self.identity_public.public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw
         )
-        self.rsa_public = self.rsa_private.public_key()
-        
-    def get_public_key_pem(self) -> bytes:
-        """Return public key in PEM format"""
-        return self.rsa_public.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        )
+
+    def compute_shared_secret(self, peer_public_bytes: bytes):
+        """Derive shared secret using X25519 exchange + PBKDF2."""
+        with self._lock:
+            peer_key = x25519.X25519PublicKey.from_public_bytes(peer_public_bytes)
+            shared_secret = self.ephemeral_private.exchange(peer_key)
+            self._derive_shared_secret(shared_secret)
+            _clear_memory(shared_secret)
+
+    def sign_handshake_data(self, data: bytes) -> bytes:
+        """Sign handshake transcript with Identity Key (Ed25519)."""
+        return self.identity_private.sign(data)
+
+    def verify_handshake_signature(self, peer_identity_bytes: bytes, data: bytes, signature: bytes) -> bool:
+        """Verify handshake transcript signature."""
+        try:
+            peer_id = ed25519.Ed25519PublicKey.from_public_bytes(peer_identity_bytes)
+            peer_id.verify(signature, data)
+            return True
+        except Exception as e:
+            logger.error(f"Signature verification failed: {e}")
+            return False
 
     def get_key_by_id(self, key_id: str) -> Optional[bytes]:
         """Retrieve current or previous key by ID"""
@@ -194,6 +232,7 @@ class SecureKeyManager:
                 if entry['id'] == key_id:
                     return entry['key']
             return None
+
     def add_external_key_to_cache(self, key: bytes, key_id: str):
         """Add external key to previous_keys cache."""
         with self._lock:
@@ -231,59 +270,13 @@ class SecureKeyManager:
             self.key_timestamp = datetime.now()
             
             return self.current_key, self.key_id
-    
-    def establish_shared_secret(self, peer_public_key: bytes) -> bytes:
-        """Establish shared secret (sender side)"""
-        with self._lock:
-            self.peer_public_key = serialization.load_pem_public_key(
-                peer_public_key,
-                backend=default_backend()
-            )
-            
-            random_secret = secrets.token_bytes(32)
-            
-            encrypted = self.peer_public_key.encrypt(
-                random_secret,
-                padding.OAEP(
-                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                    algorithm=hashes.SHA256(),
-                    label=None
-                )
-            )
-            
-            self._derive_shared_secret(random_secret)
-            
-            _clear_memory(random_secret)
-            
-            return encrypted
-
-    def decrypt_shared_secret(self, encrypted_secret: bytes) -> bytes:
-        """Decrypt shared secret from peer (receiver side)"""
-        if not self.rsa_private:
-            raise ValueError("Private key not loaded")
-
-        with self._lock:
-            decrypted_secret = self.rsa_private.decrypt(
-                encrypted_secret,
-                padding.OAEP(
-                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                    algorithm=hashes.SHA256(),
-                    label=None
-                )
-            )
-
-            self._derive_shared_secret(decrypted_secret)
-
-            _clear_memory(decrypted_secret)
-
-            return self.shared_secret
             
     def _derive_shared_secret(self, secret: bytes):
         """Derive HMAC key AND AES key (key-split) from exchanged secret"""
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=64,
-            salt=b'secure_transfer_v2_split', 
+            salt=b'secure_transfer_v2_ecdh', # Salt cambiato per nuova versione
             iterations=100000,
             backend=default_backend()
         )
@@ -298,15 +291,14 @@ class SecureKeyManager:
         _clear_memory(derived_material)
     
     def verify_signature(self, data: bytes, signature: bytes) -> bool:
-        """Verify HMAC signature with compare_digest to prevent timing attacks"""
+        """Verify HMAC signature (for packets)"""
         if not self.shared_secret:
             return False
-        
         expected = hmac.new(self.shared_secret, data, hashlib.sha256).digest()
         return hmac.compare_digest(expected, signature)
     
     def sign_data(self, data: bytes) -> bytes:
-        """Sign data with HMAC"""
+        """Sign data with HMAC (for packets)"""
         if not self.shared_secret:
             raise ValueError("Shared secret not established")
         return hmac.new(self.shared_secret, data, hashlib.sha256).digest()
@@ -326,13 +318,10 @@ class SecureProtocol:
         
         if len(filename) > 255:
             name, ext = os.path.splitext(filename)
-            
             if len(ext) > 21:
                 ext = ext[:21]
-                
             max_name_len = 255 - len(ext)
             name = name[:max_name_len]
-            
             filename = name + ext
             
         reserved = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'LPT1']
@@ -416,7 +405,6 @@ class SecureProtocol:
         if len(json_data) > MAX_PACKET_SIZE:
             raise ValueError(f"Packet too large: {len(json_data)} bytes")
         
-        # AAD Construction
         with self.key_manager._lock:
             current_key = self.key_manager.current_key
             key_id = self.key_manager.key_id
@@ -457,7 +445,6 @@ class SecureProtocol:
             key_id = self.key_manager.key_id
 
         nonce = secrets.token_bytes(12)
-        
         ciphertext_len = len(data) 
         key_id_bytes = key_id.encode('utf-8')[:16].ljust(16, b'\x00')
         
@@ -484,9 +471,7 @@ class SecureProtocol:
         return header + ciphertext
 
     def parse_packet(self, data: bytes, client_id: str) -> Tuple[str, Any, int]:
-        """
-        Analyze packet with rate limiting, replay protection, and AAD validation.
-        """
+        """Analyze packet with rate limiting, replay protection, and AAD validation."""
         
         if len(data) < HEADER_PACKET_SIZE:
             raise ValueError("Packet too short")
@@ -495,7 +480,6 @@ class SecureProtocol:
             HEADER_FORMAT, data[:HEADER_PACKET_SIZE] 
         )
         
-        # Construct AAD from header fields to verify integrity
         aad = struct.pack(
             '!4sI B Q I 16s 12s',
             magic, version, payload_type, offset, payload_len, key_id_raw, nonce
@@ -513,8 +497,6 @@ class SecureProtocol:
         key_id = key_id_raw.rstrip(b'\x00').decode('utf-8')
         
         ciphertext = data[HEADER_PACKET_SIZE : HEADER_PACKET_SIZE + payload_len]
-        
-        # Pass AAD to decrypt
         plaintext = self.decrypt_data(ciphertext, key_id, nonce, tag, aad=aad)
         
         if payload_type == PAYLOAD_TYPE_JSON:
@@ -560,7 +542,7 @@ class SecureProtocol:
             raise ValueError(f"Unknown payload type: {payload_type}")
     
     def _check_and_add_message(self, message_id: str) -> bool:
-        """Check replay and add message ID to FIFO buffer (deque)"""
+        """Check replay and add message ID to FIFO buffer"""
         if message_id in self.received_messages:
             logger.warning(f"Replay attack detected for message ID: {message_id}")
             return False
@@ -575,7 +557,14 @@ class SecureFileTransferNode:
         self.host = host
         self.port = port
         self.identity = f"{mode}_{secrets.token_hex(4)}"
-        self.key_manager = SecureKeyManager(self.identity)
+        self.server_identity_key = None
+        
+        # Server must initialize Identity Key once
+        if self.mode == 'server':
+            self.server_identity_key = ed25519.Ed25519PrivateKey.generate()
+            
+        # Initial temp key_manager (will be replaced per connection)
+        self.key_manager = SecureKeyManager(self.identity, identity_key=self.server_identity_key)
         self.received_messages: deque[str] = deque(maxlen=MAX_RECEIVED_MESSAGES) 
         self.protocol = SecureProtocol(self.key_manager, self.received_messages)
         
@@ -614,38 +603,117 @@ class SecureFileTransferNode:
         return data
 
     def _perform_secure_handshake(self, sock: socket.socket, peer_addr: str, key_manager: Optional[SecureKeyManager] = None) -> bool:
-        """Performs the RSA-OAEP handshake"""
+        """Performs the ECDH (X25519) + Ed25519 Signature handshake"""
         
         km = key_manager if key_manager else self.key_manager
         
         try:
-            public_key_pem = km.get_public_key_pem()
-            sock.sendall(struct.pack('!I', len(public_key_pem)) + public_key_pem)
-
-            header_len = struct.calcsize('!I')
-            header = self._recv_all(sock, header_len)
-            if not header: return False
-            peer_key_len, = struct.unpack('!I', header)
-            peer_key_pem = self._recv_all(sock, peer_key_len)
-            if not peer_key_pem: return False
-
+            # 1. Generate Ephemeral Key (X25519)
+            my_ephemeral_bytes = km.generate_ephemeral_key()
+            
             if self.mode == 'client':
-                encrypted_secret = km.establish_shared_secret(peer_key_pem)
-                sock.sendall(struct.pack('!I', len(encrypted_secret)) + encrypted_secret)
-                confirm_header = self._recv_all(sock, header_len)
-                if not confirm_header: return False
-                confirm_len, = struct.unpack('!I', confirm_header)
-                confirm_msg = self._recv_all(sock, confirm_len)
-                if confirm_msg != b"AUTH_OK": return False
+                # --- CLIENT FLOW ---
+                # 1. Send Ephemeral Public Key
+                sock.sendall(struct.pack('!I', len(my_ephemeral_bytes)) + my_ephemeral_bytes)
+                
+                # 2. Receive Server Response (Ephemeral + Identity + Signature)
+                header = self._recv_all(sock, 4)
+                if not header: return False
+                len_s_eph, = struct.unpack('!I', header)
+                server_ephemeral = self._recv_all(sock, len_s_eph)
+                
+                header = self._recv_all(sock, 4)
+                if not header: return False
+                len_s_id, = struct.unpack('!I', header)
+                server_identity = self._recv_all(sock, len_s_id)
+                
+                header = self._recv_all(sock, 4)
+                if not header: return False
+                len_sig, = struct.unpack('!I', header)
+                signature = self._recv_all(sock, len_sig)
+                
+                if not (server_ephemeral and server_identity and signature):
+                    return False
+                
+                # 3. Verify Signature
+                transcript = my_ephemeral_bytes + server_ephemeral
+                if not km.verify_handshake_signature(server_identity, transcript, signature):
+                    logger.error("Handshake Signature Verification Failed!")
+                    return False
+                
+                # 4. Compute Shared Secret
+                km.compute_shared_secret(server_ephemeral)
+                
+                # 5. Send AUTH_OK (Encrypted) to confirm key ownership
+                nonce = os.urandom(12)
+                cipher = Cipher(algorithms.AES(km.current_key), modes.GCM(nonce), backend=default_backend())
+                encryptor = cipher.encryptor()
+                ct = encryptor.update(b"AUTH_OK") + encryptor.finalize()
+                tag = encryptor.tag
+                payload = nonce + tag + ct 
+                sock.sendall(struct.pack('!I', len(payload)) + payload)
+                
+                # 6. Receive Server Confirmation
+                header = self._recv_all(sock, 4)
+                if not header: return False
+                len_resp, = struct.unpack('!I', header)
+                resp_payload = self._recv_all(sock, len_resp)
+                if not resp_payload: return False
+                
+                nonce_s, tag_s, ct_s = resp_payload[:12], resp_payload[12:28], resp_payload[28:]
+                cipher_s = Cipher(algorithms.AES(km.current_key), modes.GCM(nonce_s, tag_s), backend=default_backend())
+                decryptor_s = cipher_s.decryptor()
+                try:
+                    pt_s = decryptor_s.update(ct_s) + decryptor_s.finalize()
+                    if pt_s != b"AUTH_OK": return False
+                except:
+                    return False
+
             elif self.mode == 'server':
-                secret_header = self._recv_all(sock, header_len)
-                if not secret_header: return False
-                secret_len, = struct.unpack('!I', secret_header)
-                encrypted_secret = self._recv_all(sock, secret_len)
-                if not encrypted_secret: return False
-                km.decrypt_shared_secret(encrypted_secret)
-                confirm_msg = b"AUTH_OK"
-                sock.sendall(struct.pack('!I', len(confirm_msg)) + confirm_msg)
+                # --- SERVER FLOW ---
+                # 1. Receive Client Ephemeral
+                header = self._recv_all(sock, 4)
+                if not header: return False
+                len_c_eph, = struct.unpack('!I', header)
+                client_ephemeral = self._recv_all(sock, len_c_eph)
+                if not client_ephemeral: return False
+                
+                # 2. Compute Secret and Sign
+                km.compute_shared_secret(client_ephemeral)
+                transcript = client_ephemeral + my_ephemeral_bytes
+                signature = km.sign_handshake_data(transcript)
+                
+                my_identity_bytes = km.get_identity_public_bytes()
+                
+                # 3. Send Response
+                sock.sendall(struct.pack('!I', len(my_ephemeral_bytes)) + my_ephemeral_bytes)
+                sock.sendall(struct.pack('!I', len(my_identity_bytes)) + my_identity_bytes)
+                sock.sendall(struct.pack('!I', len(signature)) + signature)
+                
+                # 4. Receive Client Confirmation
+                header = self._recv_all(sock, 4)
+                if not header: return False
+                len_conf, = struct.unpack('!I', header)
+                conf_payload = self._recv_all(sock, len_conf)
+                if not conf_payload: return False
+                
+                nonce_c, tag_c, ct_c = conf_payload[:12], conf_payload[12:28], conf_payload[28:]
+                cipher_c = Cipher(algorithms.AES(km.current_key), modes.GCM(nonce_c, tag_c), backend=default_backend())
+                decryptor_c = cipher_c.decryptor()
+                try:
+                    pt_c = decryptor_c.update(ct_c) + decryptor_c.finalize()
+                    if pt_c != b"AUTH_OK": return False
+                except:
+                    return False
+                
+                # 5. Send Server Confirmation
+                nonce = os.urandom(12)
+                cipher = Cipher(algorithms.AES(km.current_key), modes.GCM(nonce), backend=default_backend())
+                encryptor = cipher.encryptor()
+                ct = encryptor.update(b"AUTH_OK") + encryptor.finalize()
+                tag = encryptor.tag
+                payload = nonce + tag + ct
+                sock.sendall(struct.pack('!I', len(payload)) + payload)
 
             logger.info(f"Secure handshake successful with {peer_addr}")
             return True
@@ -708,7 +776,10 @@ class SecureFileTransferNode:
                 self._connection_counter += 1
 
             thread_identity = f"{self.identity}_{host}:{port}_{secrets.token_hex(2)}"
-            key_manager = SecureKeyManager(thread_identity)
+            
+            # Pass Server Identity Key to new manager to avoid regeneration
+            key_manager = SecureKeyManager(thread_identity, identity_key=self.server_identity_key)
+            
             received_messages_queue: deque[str] = deque(maxlen=MAX_RECEIVED_MESSAGES) 
             protocol = SecureProtocol(key_manager, received_messages_queue)
             
