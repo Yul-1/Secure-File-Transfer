@@ -20,6 +20,7 @@ import re
 import logging
 import ipaddress
 import select
+import socks
 from pathlib import Path
 from typing import Tuple, Optional, Dict, Any, Set
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -613,10 +614,11 @@ class SecureProtocol:
 
 class SecureFileTransferNode:
     """Secure file transfer node with DoS management"""
-    def __init__(self, mode: str, host: str = '0.0.0.0', port: int = DEFAULT_PORT):
+    def __init__(self, mode: str, host: str = '0.0.0.0', port: int = DEFAULT_PORT, proxy_info: Optional[Dict[str, Any]] = None):
         self.mode = mode
         self.host = host
         self.port = port
+        self.proxy_info = proxy_info
         self.identity = f"{mode}_{secrets.token_hex(4)}"
         self.server_identity_key = None
         
@@ -653,13 +655,25 @@ class SecureFileTransferNode:
             try:
                 packet = sock.recv(length - len(data))
                 if not packet:
+                    # Peer closed connection cleanly
+                    logger.warning(f"Peer closed connection (received 0 bytes). Expected {length}, got {len(data)} bytes so far.")
                     return None
                 data += packet
             except socket.timeout:
-                logger.warning(f"Socket timeout during reception")
+                logger.warning(f"Socket timeout during reception (timeout={sock.gettimeout()}s)")
+                return None
+            except ConnectionResetError as e:
+                logger.error(f"Connection reset by peer: {e}")
+                return None
+            except ConnectionAbortedError as e:
+                logger.error(f"Connection aborted: {e}")
+                return None
+            except OSError as e:
+                # Covers ECONNREFUSED, EHOSTUNREACH, etc.
+                logger.error(f"OS-level socket error during recv: {e} (errno: {e.errno if hasattr(e, 'errno') else 'N/A'})")
                 return None
             except Exception as e:
-                logger.error(f"Error receiving data: {e}")
+                logger.error(f"Unexpected error receiving data: {e}", exc_info=True)
                 return None
         return data
 
@@ -893,12 +907,12 @@ class SecureFileTransferNode:
                         total_size = int(payload['payload']['total_size'])
                         file_hash = payload['payload'].get('hash')
                         safe_path = OUTPUT_DIR / filename
-                        
+
                         if total_size > MAX_FILE_SIZE:
                             logger.error(f"[{thread_name}] File '{filename}' exceeds MAX_FILE_SIZE ({total_size} > {MAX_FILE_SIZE}). Rejecting.")
                             try:
                                 err_packet = protocol._create_json_packet(
-                                    'file_ack', 
+                                    'file_ack',
                                     {'filename': filename, 'error': 'File too large'}
                                 )
                                 conn.sendall(err_packet)
@@ -908,21 +922,32 @@ class SecureFileTransferNode:
 
                         current_offset = 0
                         mode = 'wb'
-                        
+                        actual_write_path = safe_path
+                        use_temp_file = False
+
                         if safe_path.exists():
                             current_offset = safe_path.stat().st_size
                             if current_offset < total_size:
                                 logger.info(f"[{thread_name}] Resuming {filename} from offset {current_offset}")
                                 mode = 'ab'
                             elif current_offset == total_size:
-                                logger.info(f"[{thread_name}] File {filename} already complete. Overwriting.")
+                                logger.warning(f"[{thread_name}] File {filename} exists with same size. Using temp file to prevent source corruption.")
+                                use_temp_file = True
                                 current_offset = 0
                             else:
-                                logger.warning(f"[{thread_name}] Local file {filename} is larger than expected ({current_offset} > {total_size}). Overwriting.")
+                                logger.warning(f"[{thread_name}] Local file {filename} is larger than expected ({current_offset} > {total_size}). Using temp file.")
+                                use_temp_file = True
                                 current_offset = 0
-                        
-                        file_handle = safe_path.open(mode)
-                        current_transfer = {'path': safe_path, 'handle': file_handle, 'total': total_size, 'hash': file_hash}                        
+
+                        if use_temp_file:
+                            import tempfile
+                            temp_fd, temp_path_str = tempfile.mkstemp(dir=OUTPUT_DIR, prefix=f".tmp_{filename}_", suffix=".part")
+                            os.close(temp_fd)
+                            actual_write_path = Path(temp_path_str)
+                            logger.info(f"[{thread_name}] Writing to temporary file: {actual_write_path.name}")
+
+                        file_handle = actual_write_path.open(mode)
+                        current_transfer = {'path': safe_path, 'handle': file_handle, 'total': total_size, 'hash': file_hash, 'temp_path': actual_write_path if use_temp_file else None}                        
                         ack_packet = protocol._create_json_packet(
                             'file_resume_ack', 
                             {'filename': filename, 'offset': current_offset}
@@ -933,21 +958,22 @@ class SecureFileTransferNode:
                         if not current_transfer:
                             logger.warning(f"[{thread_name}] Received 'file_complete' without active transfer.")
                             continue
-                        
+
                         filename = payload['payload']['filename']
                         logger.info(f"[{thread_name}] Transfer complete for {filename}")
                         current_transfer['handle'].close()
 
-                        
                         final_hash_ok = False
                         client_hash = current_transfer.get('hash')
-                        file_path = current_transfer.get('path')
+                        final_path = current_transfer.get('path')
+                        temp_path = current_transfer.get('temp_path')
+                        verify_path = temp_path if temp_path else final_path
 
-                        if client_hash and file_path and file_path.exists():
-                            logger.info(f"[{thread_name}] Verifying hash for {file_path.name}...")
+                        if client_hash and verify_path and verify_path.exists():
+                            logger.info(f"[{thread_name}] Verifying hash for {verify_path.name}...")
                             try:
                                 server_hash_obj = hashlib.sha256()
-                                with file_path.open('rb') as f_verify:
+                                with verify_path.open('rb') as f_verify:
                                     while chunk := f_verify.read(BUFFER_SIZE * 10):
                                         server_hash_obj.update(chunk)
                                 calculated_hash = server_hash_obj.hexdigest()
@@ -957,9 +983,9 @@ class SecureFileTransferNode:
                                     final_hash_ok = True
                                 else:
                                     logger.error(f"[{thread_name}] HASH MISMATCH. Expected: {client_hash}, Got: {calculated_hash}")
-                                    logger.warning(f"[{thread_name}] Zombie file protection: Removing corrupted file {file_path.name}")
+                                    logger.warning(f"[{thread_name}] Zombie file protection: Removing corrupted file {verify_path.name}")
                                     try:
-                                        file_path.unlink()
+                                        verify_path.unlink()
                                         logger.info(f"[{thread_name}] Corrupted file removed successfully")
                                     except Exception as del_err:
                                         logger.error(f"[{thread_name}] Failed to remove corrupted file: {del_err}")
@@ -968,6 +994,24 @@ class SecureFileTransferNode:
                         else:
                             logger.warning(f"[{thread_name}] Skipping hash check (no hash provided or file missing).")
                             final_hash_ok = True
+
+                        if final_hash_ok and temp_path and temp_path.exists():
+                            try:
+                                if final_path.exists():
+                                    logger.info(f"[{thread_name}] Replacing existing file: {final_path.name}")
+                                    final_path.unlink()
+                                temp_path.rename(final_path)
+                                logger.info(f"[{thread_name}] Atomic rename complete: {temp_path.name} -> {final_path.name}")
+                            except Exception as rename_err:
+                                logger.error(f"[{thread_name}] Failed to rename temp file: {rename_err}")
+                                final_hash_ok = False
+                        elif not final_hash_ok and temp_path and temp_path.exists():
+                            try:
+                                temp_path.unlink()
+                                logger.info(f"[{thread_name}] Removed failed temp file: {temp_path.name}")
+                            except Exception:
+                                pass
+
                         ack_payload = {'filename': filename}
                         if not final_hash_ok:
                             ack_payload['error'] = 'Hash mismatch on server'
@@ -1069,7 +1113,16 @@ class SecureFileTransferNode:
                     current_transfer['handle'].close()
                 except Exception as e:
                     logger.error(f"[{thread_name}] Failed to close file handle: {e}")
-            
+
+            if current_transfer.get('temp_path'):
+                try:
+                    temp_file = current_transfer['temp_path']
+                    if temp_file.exists():
+                        temp_file.unlink()
+                        logger.info(f"[{thread_name}] Cleaned up incomplete temp file: {temp_file.name}")
+                except Exception as e:
+                    logger.error(f"[{thread_name}] Failed to clean up temp file: {e}")
+
             if key_manager:
                 if key_manager.current_key:
                     _clear_memory(key_manager.current_key)
@@ -1130,24 +1183,95 @@ class SecureFileTransferNode:
         """Connects securely to the server and performs the handshake"""
         self.running = True
         self.peer_address = host
-        self.peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.peer_socket = self._create_socket()
         self.peer_socket.settimeout(SOCKET_TIMEOUT)
-        
+
         try:
             logger.info(f"Connecting to {host}:{port}...")
             self.peer_socket.connect((host, port))
-            
+
             if not self._perform_secure_handshake(self.peer_socket, self.peer_address):
                 raise ConnectionRefusedError("Secure handshake failed.")
-                
+
             logger.info("Connection successful. Ready to send files.")
 
-        except (socket.error, ConnectionRefusedError) as e:
-            logger.error(f"Connection failed: {e}")
+        except ConnectionRefusedError as e:
+            if self.proxy_info:
+                logger.error(f"Connection refused. Proxy reached {host}:{port} but no server is listening.")
+                logger.error(f"Verify the target server is running: python3 sft.py --mode server --port {port}")
+            else:
+                logger.error(f"Connection refused: {e}")
+            self.shutdown()
+            raise
+        except socks.ProxyConnectionError as e:
+            logger.error(f"Proxy failed to connect to target {host}:{port}: {e}")
+            logger.error("Possible causes: server not running, firewall blocking, or network unreachable")
+            self.shutdown()
+            raise ConnectionError(f"Proxy connection to {host}:{port} failed: {e}")
+        except socket.timeout as e:
+            logger.error(f"Connection timeout to {host}:{port}: {e}")
+            if self.proxy_info:
+                logger.error(f"Check: 1) Proxy at {self.proxy_info['host']}:{self.proxy_info['port']} is reachable")
+                logger.error(f"       2) Target server at {host}:{port} is reachable from proxy")
+            self.shutdown()
+            raise
+        except socket.error as e:
+            logger.error(f"Socket error during connection: {e}")
             self.shutdown()
             raise
 
-    def _internal_send_file_logic(
+    def _create_socket(self) -> socket.socket:
+        """Creates a socket with proxy configuration if provided"""
+        if not self.proxy_info or not self.proxy_info.get("type"):
+            return socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        proxy_type_str = self.proxy_info["type"].lower()
+        proxy_host = self.proxy_info.get("host")
+        proxy_port = self.proxy_info.get("port")
+        proxy_user = self.proxy_info.get("user")
+        proxy_pass = self.proxy_info.get("pass")
+
+        if not proxy_host or proxy_port is None:
+            raise ValueError("Proxy configuration requires both host and port")
+
+        if not isinstance(proxy_port, int) or proxy_port < 1 or proxy_port > 65535:
+            raise ValueError("Proxy port must be between 1 and 65535")
+
+        if proxy_user and ('\x00' in proxy_user or len(proxy_user) > 255):
+            raise ValueError("Invalid proxy username")
+
+        if proxy_pass and ('\x00' in proxy_pass or len(proxy_pass) > 255):
+            raise ValueError("Invalid proxy password")
+
+        if proxy_type_str == "socks5":
+            proxy_type = socks.SOCKS5
+        elif proxy_type_str == "socks4":
+            proxy_type = socks.SOCKS4
+        elif proxy_type_str == "http":
+            proxy_type = socks.HTTP
+        else:
+            raise ValueError(f"Unsupported proxy type: {proxy_type_str}")
+
+        logger.info(f"Establishing connection via {proxy_type_str.upper()} proxy")
+
+        try:
+            s = socks.socksocket()
+            s.set_proxy(
+                proxy_type,
+                proxy_host,
+                proxy_port,
+                username=proxy_user,
+                password=proxy_pass
+            )
+            return s
+        except (socks.ProxyError, socks.GeneralProxyError, socks.ProxyConnectionError) as e:
+            logger.error(f"Proxy configuration failed: {str(e)}")
+            raise ConnectionError(f"Proxy initialization failed: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error during proxy setup: {str(e)}")
+            raise
+
+    def _internal_send_file_logic( 
         self, 
         sock: socket.socket, 
         protocol: SecureProtocol, 
@@ -1204,22 +1328,68 @@ class SecureFileTransferNode:
             chunk_view = memoryview(chunk_ba)
 
             try:
-                with local_path.open('rb') as f:
+                # Verify file still exists and is accessible before opening
+                if not local_path.exists():
+                    raise FileNotFoundError(f"File disappeared during transfer: {local_path}")
+
+                file_size_check = local_path.stat().st_size
+                if file_size_check != total_size:
+                    logger.error(f"[{client_id}] File size changed: was {total_size}, now {file_size_check}")
+                    raise IOError(f"File modified during transfer: size mismatch")
+
+                # Absolute path resolution to prevent relative path issues
+                file_to_send = local_path.resolve()
+                logger.info(f"[{client_id}] Opening file for transfer: {file_to_send}")
+
+                with file_to_send.open('rb') as f:
+                    # Verify file descriptor is valid
+                    if not f.readable():
+                        raise IOError(f"File handle not readable: {file_to_send}")
+
+                    # Verify we can read the file descriptor number
+                    try:
+                        fd_num = f.fileno()
+                        logger.debug(f"[{client_id}] File descriptor: {fd_num}")
+                    except Exception as e:
+                        logger.error(f"[{client_id}] Failed to get file descriptor: {e}")
+                        raise IOError(f"Invalid file handle: {e}")
+
                     f.seek(start_offset)
+                    actual_pos = f.tell()
+                    if actual_pos != start_offset:
+                        raise IOError(f"Seek failed: requested {start_offset}, actual {actual_pos}")
+
                     current_offset = start_offset
-                    
+
+                    logger.info(f"[{client_id}] File opened successfully (fd={fd_num}). Starting chunk read from offset {start_offset}")
+
                     while self.running and current_offset < total_size:
                         read_len = f.readinto(chunk_ba)
-                        
+
                         if read_len == 0:
+                            # EOF reached - check if this is expected or an error
                             if current_offset < total_size:
-                                logger.error(f"[{client_id}] EOF reached prematurely at {current_offset} (expected {total_size}). File modified?")
+                                logger.error(f"[{client_id}] EOF reached prematurely at {current_offset} (expected {total_size})")
+                                logger.error(f"[{client_id}] File path: {file_to_send}")
+                                logger.error(f"[{client_id}] File descriptor: {fd_num}, readable: {f.readable()}, closed: {f.closed}")
+                                logger.error(f"[{client_id}] Current file position: {f.tell()}")
+
+                                # Attempt to read using standard read() as diagnostic
+                                try:
+                                    f.seek(current_offset)
+                                    test_read = f.read(min(1024, total_size - current_offset))
+                                    logger.error(f"[{client_id}] Diagnostic read() returned {len(test_read)} bytes")
+                                except Exception as diag_e:
+                                    logger.error(f"[{client_id}] Diagnostic read() failed: {diag_e}")
+
                                 err_packet = protocol._create_json_packet(
-                                    'file_complete', 
+                                    'file_complete',
                                     {'filename': filename, 'error': 'File read error (EOF)'}
                                 )
                                 sock.sendall(err_packet)
-                            break 
+                            break
+
+                        logger.debug(f"[{client_id}] readinto returned: {read_len} bytes at offset {current_offset}") 
                         
                         if read_len < BUFFER_SIZE:
                             chunk_to_send = chunk_view[:read_len]
@@ -1487,11 +1657,18 @@ def simple_progress_callback(filename: str, current_bytes: int, total_bytes: int
         print("\nTransfer completed.")
 
 def main():
-    parser = argparse.ArgumentParser(description="Secure File Transfer Node (v2.6 - Bidirectional)")
+    parser = argparse.ArgumentParser(description="Secure File Transfer Node (v2.7 - Bidirectional & Proxy)")
     parser.add_argument('--mode', choices=['server', 'client'], required=True, help='Run as server or client')
     parser.add_argument('--host', type=str, default='0.0.0.0', help='Binding host IP for server')
     parser.add_argument('--port', type=int, default=DEFAULT_PORT, help='Port number')
     parser.add_argument('--connect', type=str, help='Server IP:Port to connect (client mode)')
+    
+    # Proxy arguments
+    parser.add_argument('--proxy-type', choices=['socks4', 'socks5', 'http'], help='Proxy type')
+    parser.add_argument('--proxy-host', type=str, help='Proxy host IP')
+    parser.add_argument('--proxy-port', type=int, help='Proxy port')
+    parser.add_argument('--proxy-user', type=str, help='Proxy username')
+    parser.add_argument('--proxy-pass', type=str, help='Proxy password')
     
     parser.add_argument('--file', type=str, help='Path to the file to UPLOAD (client mode)')
     parser.add_argument('--list', action='store_true', help='List remote files on server (client mode)')
@@ -1499,8 +1676,18 @@ def main():
     parser.add_argument('--output', type=str, default='.', help='Local directory or path to save downloaded file (default: current dir)')
     
     args = parser.parse_args()
+
+    proxy_info = None
+    if args.proxy_type and args.proxy_host and args.proxy_port:
+        proxy_info = {
+            "type": args.proxy_type,
+            "host": args.proxy_host,
+            "port": args.proxy_port,
+            "user": args.proxy_user,
+            "pass": args.proxy_pass
+        }
     
-    node = SecureFileTransferNode(args.mode, args.host, args.port)
+    node = SecureFileTransferNode(args.mode, args.host, args.port, proxy_info=proxy_info)
     
     try:
         if args.mode == 'server':
@@ -1535,14 +1722,18 @@ def main():
                 return
 
             try:
-                socket.gethostbyname(server_host)
-                try:
-                    ipaddress.ip_address(server_host)
-                except ValueError:
-                    pass
-            except socket.gaierror:
-                print(f"[ERROR] Cannot resolve host: {server_host}")
-                return
+                ipaddress.ip_address(server_host)
+            except ValueError:
+                if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$', server_host):
+                    print(f"[ERROR] Invalid hostname format: {server_host}")
+                    return
+
+                if not proxy_info:
+                    try:
+                        socket.gethostbyname(server_host)
+                    except socket.gaierror:
+                        print(f"[ERROR] Cannot resolve host: {server_host}")
+                        return
 
             local_save_path_for_download: Optional[Path] = None
             temp_download_path: Optional[Path] = None

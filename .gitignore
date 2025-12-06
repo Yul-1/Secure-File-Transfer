@@ -13,6 +13,8 @@ venv/
 secure_transfer.log
 *.log
 ricevuti/
+*.part
+.tmp_*
 
 # File di test generati
 file.txt
@@ -20,3 +22,7 @@ crypto_accelerator.so
 tests/*.pcapng
 tests/*.csv
 tests/*.txt
+
+# Session and sensitive documentation
+SESSION_LOG.md
+proxy_testing.md
