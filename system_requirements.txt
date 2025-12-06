@@ -1,0 +1,135 @@
+# System Requirements for Secure File Transfer (SFT)
+
+# This file lists system-level dependencies that must be installed
+# via your package manager (apt, yum, brew, etc.)
+
+# ============================================================================
+# Essential Build Tools
+# ============================================================================
+
+# GCC compiler and build essentials
+gcc
+g++
+make
+
+# Python development headers (required for C extension compilation)
+python3-dev          # Ubuntu/Debian
+# python3-devel      # RHEL/CentOS/Fedora
+# python3            # macOS (via Homebrew)
+
+# ============================================================================
+# Cryptographic Libraries
+# ============================================================================
+
+# OpenSSL development libraries (required for crypto_accelerator.c)
+libssl-dev           # Ubuntu/Debian
+# openssl-devel      # RHEL/CentOS/Fedora
+# openssl            # macOS (via Homebrew)
+
+# ============================================================================
+# Python Package Manager
+# ============================================================================
+
+# pip for Python package installation
+python3-pip          # Ubuntu/Debian
+# python3-pip        # RHEL/CentOS/Fedora
+# (included with Homebrew python3 on macOS)
+
+# ============================================================================
+# Optional but Recommended
+# ============================================================================
+
+# Git for version control
+git
+
+# Virtual environment support
+python3-venv         # Ubuntu/Debian
+# python3-virtualenv # RHEL/CentOS/Fedora
+
+# ============================================================================
+# Testing Infrastructure (Optional)
+# ============================================================================
+
+# For proxy testing (see proxy_testing.md)
+dante-server         # SOCKS4/5 proxy server
+privoxy              # HTTP proxy server
+ssh                  # SSH tunnel for authenticated SOCKS5
+
+# ============================================================================
+# Platform-Specific Installation Commands
+# ============================================================================
+
+# Ubuntu/Debian
+# -------------
+# sudo apt update
+# sudo apt install -y build-essential python3-dev libssl-dev python3-pip git python3-venv
+
+# RHEL/CentOS/Fedora
+# ------------------
+# sudo yum groupinstall "Development Tools"
+# sudo yum install -y python3-devel openssl-devel python3-pip git
+
+# macOS (Homebrew)
+# ----------------
+# brew install python openssl
+# export LDFLAGS="-L$(brew --prefix openssl)/lib"
+# export CPPFLAGS="-I$(brew --prefix openssl)/include"
+
+# Alpine Linux
+# ------------
+# apk add --no-cache gcc musl-dev python3-dev libffi-dev openssl-dev make git
+
+# Arch Linux
+# ----------
+# pacman -S base-devel python python-pip openssl git
+
+# ============================================================================
+# Minimum Version Requirements
+# ============================================================================
+
+# Python: 3.9+
+# GCC: 4.8+ (for C11 support)
+# OpenSSL: 1.1.1+ (for modern cryptographic functions)
+# Make: 3.8+
+
+# ============================================================================
+# Verification Commands
+# ============================================================================
+
+# Verify installations:
+# python3 --version          # Should be >= 3.9
+# gcc --version              # Should be >= 4.8
+# openssl version            # Should be >= 1.1.1
+# pip3 --version             # Should be installed
+# git --version              # Should be installed
+
+# Check Python development headers:
+# python3-config --includes  # Should return include paths
+# python3-config --ldflags   # Should return library paths
+
+# Check OpenSSL development files:
+# pkg-config --cflags openssl    # Should return OpenSSL include paths
+# pkg-config --libs openssl      # Should return OpenSSL library flags
+
+# ============================================================================
+# Notes
+# ============================================================================
+
+# 1. The C module (crypto_accelerator.c) is OPTIONAL but highly recommended
+#    for performance. If compilation fails, SFT will automatically fall back
+#    to pure Python cryptography.
+
+# 2. On macOS, you may need to set environment variables for OpenSSL paths
+#    when compiling the C extension:
+#    export LDFLAGS="-L$(brew --prefix openssl)/lib"
+#    export CPPFLAGS="-I$(brew --prefix openssl)/include"
+
+# 3. Windows users require Visual Studio Build Tools:
+#    https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022
+
+# 4. For proxy testing, dante-server and privoxy are only needed if you want
+#    to test proxy functionality locally. They are not required for normal
+#    SFT operation.
+
+# 5. If you encounter compilation errors, ensure all *-dev/*-devel packages
+#    are installed. These provide the header files (.h) needed for compilation.
