@@ -20,3 +20,7 @@ crypto_accelerator.so
 tests/*.pcapng
 tests/*.csv
 tests/*.txt
+
+# Session and sensitive documentation
+SESSION_LOG.md
+proxy_testing.md
