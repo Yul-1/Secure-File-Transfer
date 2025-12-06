@@ -211,12 +211,27 @@ The system implements defense in depth with multiple protections at every layer:
 
 ## Installation
 
+### System Requirements
+
+SFT requires system-level dependencies for compilation and cryptographic operations. See `system_requirements.txt` for complete details.
+
+**Minimum versions:**
+- Python 3.9+
+- GCC 4.8+ (for C11 support)
+- OpenSSL 1.1.1+
+
 ### Prerequisites
 
 #### Ubuntu/Debian
 ```bash
 sudo apt update
-sudo apt install -y python3-dev build-essential libssl-dev python3-pip git
+sudo apt install -y build-essential python3-dev libssl-dev python3-pip git python3-venv
+```
+
+#### RHEL/CentOS/Fedora
+```bash
+sudo yum groupinstall "Development Tools"
+sudo yum install -y python3-devel openssl-devel python3-pip git
 ```
 
 #### macOS
@@ -226,10 +241,31 @@ export LDFLAGS="-L$(brew --prefix openssl)/lib"
 export CPPFLAGS="-I$(brew --prefix openssl)/include"
 ```
 
+#### Alpine Linux
+```bash
+apk add --no-cache gcc musl-dev python3-dev libffi-dev openssl-dev make git
+```
+
 #### Windows
 ```powershell
 # Requires Visual Studio Build Tools
 # Download from: https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022
+```
+
+### Verification
+
+Verify that all system dependencies are installed:
+
+```bash
+# Check versions
+python3 --version          # Should be >= 3.9
+gcc --version              # Should be >= 4.8
+openssl version            # Should be >= 1.1.1
+pip3 --version
+
+# Verify development headers
+python3-config --includes  # Should return include paths
+pkg-config --cflags openssl # Should return OpenSSL paths
 ```
 
 ### Standard Installation
@@ -248,12 +284,14 @@ venv\Scripts\activate  # Windows
 # 3. Install Python dependencies
 pip install -r requirements.txt
 
-# 4. Compile C module (optional but recommended)
+# 4. Compile C module (optional but recommended for performance)
 python3 python_wrapper.py --compile
 
 # 5. Verify installation
 python3 python_wrapper.py --test
 ```
+
+**Note:** The C module is optional. If compilation fails, SFT will automatically fall back to pure Python cryptography with reduced performance.
 
 
 ## Usage
@@ -493,7 +531,9 @@ SFT/
 ├── sft.py                          # Main protocol (v2.7)
 ├── python_wrapper.py               # Cryptographic wrapper
 ├── crypto_accelerator.c            # C module (source)
-├── requirements.txt                # Python dependencies
+├── requirements.txt                # Python dependencies (pip)
+├── system_requirements.txt         # System dependencies (apt/yum/brew)
+├── proxy_testing.md                # Proxy testing guide
 ├── tests/                          # Test suite
 │   ├── conftest.py                 # Pytest fixtures
 │   ├── test_crypto_accelerator.py
