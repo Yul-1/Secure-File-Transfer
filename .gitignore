@@ -6,12 +6,15 @@ __pycache__/
 
 # Virtual environment
 venv/
+.venv/
 *.env
 
 # Log e file di output
 secure_transfer.log
 *.log
 ricevuti/
+*.part
+.tmp_*
 
 # File di test generati
 file.txt
@@ -19,3 +22,7 @@ crypto_accelerator.so
 tests/*.pcapng
 tests/*.csv
 tests/*.txt
+
+# Session and sensitive documentation
+SESSION_LOG.md
+proxy_testing.md
