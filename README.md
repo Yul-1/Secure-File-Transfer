@@ -1,4 +1,4 @@
-# 🛡️ Secure File Transfer System
+# Secure File Transfer System
 
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
 [![Version](https://img.shields.io/badge/version-2.7-blue)](https://github.com/Yul-1/SFT)
@@ -7,22 +7,22 @@
 [![Tests](https://img.shields.io/badge/tests-comprehensive-success)](https://github.com/Yul-1/SFT)
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/Yul-1/SFT)
 
-## 📋 Table of Contents
+## Table of Contents
 
-- [Overview](#-overview)
-- [Key Features](#-key-features)
-- [System Architecture](#-system-architecture)
-- [Security](#-security)
-- [Installation](#-installation)
-- [Usage](#-usage)
-- [Testing](#-testing)
-- [Performance](#-performance)
-- [Development](#-development)
-- [Roadmap](#-roadmap)
-- [Contributing](#-contributing)
-- [License](#-license)
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [System Architecture](#system-architecture)
+- [Security](#security)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Testing](#testing)
+- [Performance](#performance)
+- [Development](#development)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
 
-## 🎯 Overview
+## Overview
 
 Secure File Transfer is a **bidirectional** secure file transfer system designed from the ground up with a "security-first" architecture. The project combines the speed of hardware-accelerated cryptography in C with the security and flexibility of Python, creating a robust solution for secure file transfer over untrusted networks.
 
@@ -44,9 +44,9 @@ While established protocols like SCP and SFTP exist, Secure File Transfer serves
 - **Replay bypass protection** with sequence number tracking
 - **Zombie file protection** with automatic corruption cleanup
 
-## ✨ Key Features
+## Key Features
 
-### 🔐 Advanced Encryption
+### Advanced Encryption
 - **AES-256-GCM** for symmetric encryption with integrated authentication
 - **ECDH (X25519)** for Diffie-Hellman key exchange (replaces RSA-4096)
 - **Ed25519** for digital signatures and authentication
@@ -54,7 +54,7 @@ While established protocols like SCP and SFTP exist, Secure File Transfer serves
 - **PBKDF2** with 100,000 iterations for key derivation
 - **Authenticated headers** with AAD (Additional Authenticated Data) to prevent packet tampering
 
-### 🛡️ Security Protections
+### Security Protections
 - **Anti-DoS**: Intelligent rate limiting and connection management (mitigates RSA key exhaustion attacks)
 - **Anti-Replay**: Detection system based on timestamps and message IDs
 - **Anti-Timing**: Constant-time comparisons to prevent side-channel attacks
@@ -63,20 +63,20 @@ While established protocols like SCP and SFTP exist, Secure File Transfer serves
 - **Memory Safety**: Secure cleanup of keys from memory after use
 - **Information Leak Prevention**: Sanitized error messages and side-channel protections
 
-### ⚡ Performance
+### Performance
 - **Hardware Acceleration**: C module compiled with native optimizations
 - **Automatic Fallback**: Pure Python system if C module is unavailable
 - **Efficient Chunking**: Optimized transfer for large files
 - **Resume Support**: Automatic resumption of interrupted transfers
 
-### 🔄 Reliability
+### Reliability
 - **Thread-Safe**: Multi-threaded architecture with complete session isolation
 - **Bidirectional**: Upload, download, and remote file listing
 - **Protocol Validation**: Strict JSON schema for all messages
 - **Robust Error Handling**: Graceful recovery from network and protocol errors
 - **Comprehensive Logging**: Detailed logging system with automatic rotation
 
-## 🏗️ System Architecture
+## System Architecture
 
 The system is built on three interconnected layers that work in synergy to provide optimal security and performance:
 
@@ -150,17 +150,17 @@ sequenceDiagram
     C->>S: File ACK
 ```
 
-## 🔒 Security
+## Security
 
-### Recent Security Enhancements (v2.7)
-
-The latest version includes significant cryptographic improvements:
+### Security Enhancements in v2.7
 
 - **ECDH Migration**: Replaced RSA-4096 with X25519 Elliptic Curve Diffie-Hellman to eliminate RSA key exhaustion DoS attacks while maintaining strong security
 - **Ed25519 Signatures**: Added digital signature authentication for non-repudiation and enhanced identity verification
 - **AAD Authentication**: All packet headers are now authenticated using Additional Authenticated Data (AAD) in AES-GCM, preventing header tampering attacks
-- **Information Leak Fixes**: Resolved side-channel vulnerabilities through sanitized error messages and strict validation
+- **Information Leak Prevention**: Sanitized error messages and strict validation to prevent side-channel vulnerabilities
 - **Path Traversal Hardening**: Enhanced filename validation on both client and server to prevent directory traversal attacks
+- **Replay Bypass Mitigation**: Sequence number tracking with sliding window algorithm prevents FIFO queue flooding attacks
+- **Zombie File Protection**: Automatic removal of corrupted files when hash verification fails
 
 ### Multi-Layer Protection
 
@@ -209,7 +209,7 @@ The system implements defense in depth with multiple protections at every layer:
 | Key Exhaustion | ECDH with ephemeral keys (replaces RSA) |
 | Zombie Files | Automatic removal of corrupted files on hash mismatch |
 
-## 📦 Installation
+## Installation
 
 ### Prerequisites
 
@@ -256,7 +256,7 @@ python3 python_wrapper.py --test
 ```
 
 
-## 🚀 Usage
+## Usage
 
 ### Starting the Server
 
@@ -420,23 +420,23 @@ def transfer_with_monitoring(server, file_path):
         "--connect", server,
         "--file", file_path
     ]
-    
+
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    
+
     while process.poll() is None:
         time.sleep(1)
         print(".", end="", flush=True)
-    
+
     if process.returncode == 0:
-        print("\n✅ Transfer completed successfully!")
+        print("\nTransfer completed successfully!")
     else:
-        print(f"\n❌ Transfer error: {process.stderr.read()}")
+        print(f"\nTransfer error: {process.stderr.read()}")
 
 # Usage
 transfer_with_monitoring("192.168.1.50:5555", "important_data.db")
 ```
 
-## 🧪 Testing
+## Testing
 
 ### Comprehensive Test Suite
 
@@ -466,7 +466,7 @@ time python3 sft.py --mode client \
     --connect localhost:5555 --file test_1gb.bin
 ```
 
-## 📊 Performance
+## Performance
 
 ### Comparative Benchmarks
 
@@ -484,7 +484,7 @@ time python3 sft.py --mode client \
 - **Parallel processing**: Separate threads for I/O and cryptography
 - **Native optimizations**: Compilation with -O3 -march=native
 
-## 🔧 Development
+## Development
 
 ### Project Structure
 
@@ -493,20 +493,21 @@ SFT/
 ├── sft.py                          # Main protocol (v2.7)
 ├── python_wrapper.py               # Cryptographic wrapper
 ├── crypto_accelerator.c            # C module (source)
-├── crypto_accelerator.so           # Compiled C module
 ├── requirements.txt                # Python dependencies
 ├── tests/                          # Test suite
-│   ├── conftest.py                # Pytest fixtures
+│   ├── conftest.py                 # Pytest fixtures
 │   ├── test_crypto_accelerator.py
 │   ├── test_python_wrapper.py
 │   ├── test_security_protocol.py
 │   ├── test_dos_mitigation.py
 │   ├── test_concurrency.py
 │   ├── test_unit_sft.py
-│   ├── test_proxy.py              # Proxy functionality tests
-│   ├── test_p0_security.py        # Priority 0 security tests
-│   ├── test_p1_robustness.py      # Priority 1 robustness tests
-│   ├── test_p2_completeness.py    # Priority 2 completeness tests
+│   ├── test_proxy.py               # Proxy functionality tests
+│   ├── test_new_crypto_ecdh.py     # ECDH/Ed25519 tests
+│   ├── test_advanced_security.py   # Advanced security tests
+│   ├── test_p0_security.py         # Priority 0 security tests
+│   ├── test_p1_robustness.py       # Priority 1 robustness tests
+│   ├── test_p2_completeness.py     # Priority 2 completeness tests
 │   └── test_p2_unit_completeness.py
 ├── ricevuti/                       # Output directory (created at runtime)
 └── README.md                       # This file
@@ -545,28 +546,9 @@ DEBUG=1 python3 sft.py --mode server --debug
 - **Tests**: Minimum 80% coverage for new features
 - **Documentation**: Docstrings for all public functions
 
-## 🗺️ Roadmap
+## Roadmap
 
-### Version 2.1 ✅
-- [x] Basic client-server implementation
-- [x] AES-256-GCM encryption
-- [x] RSA-4096 handshake
-- [x] Basic anti-DoS protection
-- [x] Complete test suite
-
-### Version 2.5 ✅
-- [x] Complete thread safety
-- [x] Transfer resume
-- [x] Automatic Python fallback
-
-### Version 2.6 ✅
-- [x] Bidirectional functionality (upload and download)
-- [x] `--list` command to list remote files
-- [x] `--download` command to download files from server
-- [x] Customizable output directory
-- [x] Extended test suite with priorities (P0, P1, P2)
-
-### Version 2.7 ✅ (Current)
+### Version 2.7 (Current)
 - [x] Migration from RSA to ECDH (X25519) for key exchange
 - [x] Ed25519 digital signatures for authentication
 - [x] AAD (Additional Authenticated Data) on packet headers
@@ -578,13 +560,13 @@ DEBUG=1 python3 sft.py --mode server --debug
 - [x] SOCKS4/SOCKS5/HTTP proxy support for client connections
 - [ ] Linux installer script (install.sh)
 
-### Version 2.8 📋
+### Version 2.8
 - [ ] Fingerprint/passphrase authentication to mitigate MitM attacks
-- [ ] File descriptor leak prevention (server crash without closing file handles)
+- [ ] File descriptor leak prevention
 - [ ] Connection rate limiting per IP with exponential backoff
 - [ ] Automatic log rotation and compression
 
-### Version 3.0 📋
+### Version 3.0
 - [ ] GUI with PyQt6
 - [ ] Simultaneous multi-file transfers
 - [ ] X.509 certificate authentication
@@ -593,46 +575,47 @@ DEBUG=1 python3 sft.py --mode server --debug
 - [ ] REST API for integration
 - [ ] Docker container
 
-### Version 4.0 🔮
+### Version 4.0
 - [ ] Complete IPv6 support
 - [ ] Peer-to-peer transfer
 - [ ] Post-quantum cryptography (Kyber)
 - [ ] Blockchain for audit log
 - [ ] Mobile app (Android/iOS)
 
-### Experimental Features 🧪
+### Experimental Features
 - [ ] WebRTC for NAT traversal
 - [ ] Machine learning for anomaly detection
 - [ ] Hardware security module (HSM) support
 - [ ] Distributed storage integration
 
-## 🤝 Contributing
+## Contributing
 
 Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/Yul-1/SFT/issues).
 
 ### Top Contributors
 - **@Yul-1** - Creator and main maintainer
-- **[Your name here]** - Contribute and appear in this list!
+- **[Your name here]** - Contribute and appear in this list
 
-## 📝 License
+## License
 
 This project is distributed under the MIT License.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - **OpenSSL** for cryptographic primitives
 - **Python Cryptography** for fallback
 - The open source community for feedback and suggestions
 
-## 📞 Contact
+## Contact
 
 - **GitHub**: [@Yul-1](https://github.com/Yul-1)
 - **Issues**: [GitHub Issues](https://github.com/Yul-1/SFT/issues)
 - **Mail**: [yul.cysec@gmail.com]
+
 ---
 
 <div align="center">
-  
-**[⬆ Back to top](#-secure-file-transfer-system)**
+
+**[Back to top](#secure-file-transfer-system)**
 
 </div>
