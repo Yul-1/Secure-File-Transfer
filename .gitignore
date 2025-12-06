@@ -13,6 +13,8 @@ venv/
 secure_transfer.log
 *.log
 ricevuti/
+*.part
+.tmp_*
 
 # File di test generati
 file.txt

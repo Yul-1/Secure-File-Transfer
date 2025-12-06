@@ -907,12 +907,12 @@ class SecureFileTransferNode:
                         total_size = int(payload['payload']['total_size'])
                         file_hash = payload['payload'].get('hash')
                         safe_path = OUTPUT_DIR / filename
-                        
+
                         if total_size > MAX_FILE_SIZE:
                             logger.error(f"[{thread_name}] File '{filename}' exceeds MAX_FILE_SIZE ({total_size} > {MAX_FILE_SIZE}). Rejecting.")
                             try:
                                 err_packet = protocol._create_json_packet(
-                                    'file_ack', 
+                                    'file_ack',
                                     {'filename': filename, 'error': 'File too large'}
                                 )
                                 conn.sendall(err_packet)
@@ -922,21 +922,32 @@ class SecureFileTransferNode:
 
                         current_offset = 0
                         mode = 'wb'
-                        
+                        actual_write_path = safe_path
+                        use_temp_file = False
+
                         if safe_path.exists():
                             current_offset = safe_path.stat().st_size
                             if current_offset < total_size:
                                 logger.info(f"[{thread_name}] Resuming {filename} from offset {current_offset}")
                                 mode = 'ab'
                             elif current_offset == total_size:
-                                logger.info(f"[{thread_name}] File {filename} already complete. Overwriting.")
+                                logger.warning(f"[{thread_name}] File {filename} exists with same size. Using temp file to prevent source corruption.")
+                                use_temp_file = True
                                 current_offset = 0
                             else:
-                                logger.warning(f"[{thread_name}] Local file {filename} is larger than expected ({current_offset} > {total_size}). Overwriting.")
+                                logger.warning(f"[{thread_name}] Local file {filename} is larger than expected ({current_offset} > {total_size}). Using temp file.")
+                                use_temp_file = True
                                 current_offset = 0
-                        
-                        file_handle = safe_path.open(mode)
-                        current_transfer = {'path': safe_path, 'handle': file_handle, 'total': total_size, 'hash': file_hash}                        
+
+                        if use_temp_file:
+                            import tempfile
+                            temp_fd, temp_path_str = tempfile.mkstemp(dir=OUTPUT_DIR, prefix=f".tmp_{filename}_", suffix=".part")
+                            os.close(temp_fd)
+                            actual_write_path = Path(temp_path_str)
+                            logger.info(f"[{thread_name}] Writing to temporary file: {actual_write_path.name}")
+
+                        file_handle = actual_write_path.open(mode)
+                        current_transfer = {'path': safe_path, 'handle': file_handle, 'total': total_size, 'hash': file_hash, 'temp_path': actual_write_path if use_temp_file else None}                        
                         ack_packet = protocol._create_json_packet(
                             'file_resume_ack', 
                             {'filename': filename, 'offset': current_offset}
@@ -947,21 +958,22 @@ class SecureFileTransferNode:
                         if not current_transfer:
                             logger.warning(f"[{thread_name}] Received 'file_complete' without active transfer.")
                             continue
-                        
+
                         filename = payload['payload']['filename']
                         logger.info(f"[{thread_name}] Transfer complete for {filename}")
                         current_transfer['handle'].close()
 
-                        
                         final_hash_ok = False
                         client_hash = current_transfer.get('hash')
-                        file_path = current_transfer.get('path')
+                        final_path = current_transfer.get('path')
+                        temp_path = current_transfer.get('temp_path')
+                        verify_path = temp_path if temp_path else final_path
 
-                        if client_hash and file_path and file_path.exists():
-                            logger.info(f"[{thread_name}] Verifying hash for {file_path.name}...")
+                        if client_hash and verify_path and verify_path.exists():
+                            logger.info(f"[{thread_name}] Verifying hash for {verify_path.name}...")
                             try:
                                 server_hash_obj = hashlib.sha256()
-                                with file_path.open('rb') as f_verify:
+                                with verify_path.open('rb') as f_verify:
                                     while chunk := f_verify.read(BUFFER_SIZE * 10):
                                         server_hash_obj.update(chunk)
                                 calculated_hash = server_hash_obj.hexdigest()
@@ -971,9 +983,9 @@ class SecureFileTransferNode:
                                     final_hash_ok = True
                                 else:
                                     logger.error(f"[{thread_name}] HASH MISMATCH. Expected: {client_hash}, Got: {calculated_hash}")
-                                    logger.warning(f"[{thread_name}] Zombie file protection: Removing corrupted file {file_path.name}")
+                                    logger.warning(f"[{thread_name}] Zombie file protection: Removing corrupted file {verify_path.name}")
                                     try:
-                                        file_path.unlink()
+                                        verify_path.unlink()
                                         logger.info(f"[{thread_name}] Corrupted file removed successfully")
                                     except Exception as del_err:
                                         logger.error(f"[{thread_name}] Failed to remove corrupted file: {del_err}")
@@ -982,6 +994,24 @@ class SecureFileTransferNode:
                         else:
                             logger.warning(f"[{thread_name}] Skipping hash check (no hash provided or file missing).")
                             final_hash_ok = True
+
+                        if final_hash_ok and temp_path and temp_path.exists():
+                            try:
+                                if final_path.exists():
+                                    logger.info(f"[{thread_name}] Replacing existing file: {final_path.name}")
+                                    final_path.unlink()
+                                temp_path.rename(final_path)
+                                logger.info(f"[{thread_name}] Atomic rename complete: {temp_path.name} -> {final_path.name}")
+                            except Exception as rename_err:
+                                logger.error(f"[{thread_name}] Failed to rename temp file: {rename_err}")
+                                final_hash_ok = False
+                        elif not final_hash_ok and temp_path and temp_path.exists():
+                            try:
+                                temp_path.unlink()
+                                logger.info(f"[{thread_name}] Removed failed temp file: {temp_path.name}")
+                            except Exception:
+                                pass
+
                         ack_payload = {'filename': filename}
                         if not final_hash_ok:
                             ack_payload['error'] = 'Hash mismatch on server'
@@ -1083,7 +1113,16 @@ class SecureFileTransferNode:
                     current_transfer['handle'].close()
                 except Exception as e:
                     logger.error(f"[{thread_name}] Failed to close file handle: {e}")
-            
+
+            if current_transfer.get('temp_path'):
+                try:
+                    temp_file = current_transfer['temp_path']
+                    if temp_file.exists():
+                        temp_file.unlink()
+                        logger.info(f"[{thread_name}] Cleaned up incomplete temp file: {temp_file.name}")
+                except Exception as e:
+                    logger.error(f"[{thread_name}] Failed to clean up temp file: {e}")
+
             if key_manager:
                 if key_manager.current_key:
                     _clear_memory(key_manager.current_key)
@@ -1289,22 +1328,68 @@ class SecureFileTransferNode:
             chunk_view = memoryview(chunk_ba)
 
             try:
-                with local_path.open('rb') as f:
+                # Verify file still exists and is accessible before opening
+                if not local_path.exists():
+                    raise FileNotFoundError(f"File disappeared during transfer: {local_path}")
+
+                file_size_check = local_path.stat().st_size
+                if file_size_check != total_size:
+                    logger.error(f"[{client_id}] File size changed: was {total_size}, now {file_size_check}")
+                    raise IOError(f"File modified during transfer: size mismatch")
+
+                # Absolute path resolution to prevent relative path issues
+                file_to_send = local_path.resolve()
+                logger.info(f"[{client_id}] Opening file for transfer: {file_to_send}")
+
+                with file_to_send.open('rb') as f:
+                    # Verify file descriptor is valid
+                    if not f.readable():
+                        raise IOError(f"File handle not readable: {file_to_send}")
+
+                    # Verify we can read the file descriptor number
+                    try:
+                        fd_num = f.fileno()
+                        logger.debug(f"[{client_id}] File descriptor: {fd_num}")
+                    except Exception as e:
+                        logger.error(f"[{client_id}] Failed to get file descriptor: {e}")
+                        raise IOError(f"Invalid file handle: {e}")
+
                     f.seek(start_offset)
+                    actual_pos = f.tell()
+                    if actual_pos != start_offset:
+                        raise IOError(f"Seek failed: requested {start_offset}, actual {actual_pos}")
+
                     current_offset = start_offset
-                    
+
+                    logger.info(f"[{client_id}] File opened successfully (fd={fd_num}). Starting chunk read from offset {start_offset}")
+
                     while self.running and current_offset < total_size:
                         read_len = f.readinto(chunk_ba)
-                        
+
                         if read_len == 0:
+                            # EOF reached - check if this is expected or an error
                             if current_offset < total_size:
-                                logger.error(f"[{client_id}] EOF reached prematurely at {current_offset} (expected {total_size}). File modified?")
+                                logger.error(f"[{client_id}] EOF reached prematurely at {current_offset} (expected {total_size})")
+                                logger.error(f"[{client_id}] File path: {file_to_send}")
+                                logger.error(f"[{client_id}] File descriptor: {fd_num}, readable: {f.readable()}, closed: {f.closed}")
+                                logger.error(f"[{client_id}] Current file position: {f.tell()}")
+
+                                # Attempt to read using standard read() as diagnostic
+                                try:
+                                    f.seek(current_offset)
+                                    test_read = f.read(min(1024, total_size - current_offset))
+                                    logger.error(f"[{client_id}] Diagnostic read() returned {len(test_read)} bytes")
+                                except Exception as diag_e:
+                                    logger.error(f"[{client_id}] Diagnostic read() failed: {diag_e}")
+
                                 err_packet = protocol._create_json_packet(
-                                    'file_complete', 
+                                    'file_complete',
                                     {'filename': filename, 'error': 'File read error (EOF)'}
                                 )
                                 sock.sendall(err_packet)
-                            break 
+                            break
+
+                        logger.debug(f"[{client_id}] readinto returned: {read_len} bytes at offset {current_offset}") 
                         
                         if read_len < BUFFER_SIZE:
                             chunk_to_send = chunk_view[:read_len]
