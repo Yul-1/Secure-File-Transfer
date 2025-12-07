@@ -27,7 +27,7 @@ try:
     import python_wrapper as wrapper
     
     # Importiamo il modulo C reale per i test di integrazione
-    import crypto_accelerator as crypto_c
+    import crypto_accelerator as crypto_rust
     
 except ImportError as e:
     print(f"\n--- ERRORE DI IMPORT ---")
@@ -75,10 +75,10 @@ def test_validate_size(base_config):
 
 # 2. Test di Fallback e Selezione Modulo
 
-@patch('python_wrapper.C_MODULE_AVAILABLE', True)
+@patch('python_wrapper.RUST_MODULE_AVAILABLE', True)
 def test_mode_c_module_default(crypto_data, base_config):
     """
-    Testa la modalità predefinita: C_MODULE_AVAILABLE=True, use_hardware_acceleration=True.
+    Testa la modalità predefinita: RUST_MODULE_AVAILABLE=True, use_hardware_acceleration=True.
     Verifica che il modulo C venga utilizzato.
     """
     key, iv, plaintext = crypto_data
@@ -91,14 +91,14 @@ def test_mode_c_module_default(crypto_data, base_config):
     decrypted = crypto.decrypt_aes_gcm(ciphertext, key, iv, tag)
     
     assert decrypted == plaintext
-    assert crypto.stats['c_module_used'] > 0 #
+    assert crypto.stats['rust_module_used'] > 0 #
     assert crypto.stats['python_fallback'] == 0
     assert crypto.stats['errors'] == 0
 
-@patch('python_wrapper.C_MODULE_AVAILABLE', False)
+@patch('python_wrapper.RUST_MODULE_AVAILABLE', False)
 def test_mode_python_fallback_module_missing(crypto_data, base_config):
     """
-    Testa la modalità fallback: C_MODULE_AVAILABLE=False.
+    Testa la modalità fallback: RUST_MODULE_AVAILABLE=False.
     Verifica che venga usato il fallback Python.
     """
     key, iv, plaintext = crypto_data
@@ -111,14 +111,14 @@ def test_mode_python_fallback_module_missing(crypto_data, base_config):
     decrypted = crypto.decrypt_aes_gcm(ciphertext, key, iv, tag)
     
     assert decrypted == plaintext
-    assert crypto.stats['c_module_used'] == 0
+    assert crypto.stats['rust_module_used'] == 0
     assert crypto.stats['python_fallback'] > 0 #
     assert crypto.stats['errors'] == 0
 
-@patch('python_wrapper.C_MODULE_AVAILABLE', True)
+@patch('python_wrapper.RUST_MODULE_AVAILABLE', True)
 def test_mode_python_fallback_config_disabled(crypto_data):
     """
-    Testa la modalità fallback: C_MODULE_AVAILABLE=True, ma config.use_hardware_acceleration=False.
+    Testa la modalità fallback: RUST_MODULE_AVAILABLE=True, ma config.use_hardware_acceleration=False.
     Verifica che venga usato il fallback Python.
     """
     key, iv, plaintext = crypto_data
@@ -132,12 +132,12 @@ def test_mode_python_fallback_config_disabled(crypto_data):
     decrypted = crypto.decrypt_aes_gcm(ciphertext, key, iv, tag)
     
     assert decrypted == plaintext
-    assert crypto.stats['c_module_used'] == 0
+    assert crypto.stats['rust_module_used'] == 0
     assert crypto.stats['python_fallback'] > 0 #
     assert crypto.stats['errors'] == 0
 
-@patch('python_wrapper.crypto_c.aes_gcm_encrypt', MagicMock(side_effect=Exception("Simulated C Failure")))
-@patch('python_wrapper.C_MODULE_AVAILABLE', True)
+@patch('python_wrapper.crypto_rust.aes_gcm_encrypt', MagicMock(side_effect=Exception("Simulated C Failure")))
+@patch('python_wrapper.RUST_MODULE_AVAILABLE', True)
 def test_mode_python_fallback_on_c_error(crypto_data, base_config):
     """
     Testa la modalità fallback: Il modulo C è disponibile ma solleva un'eccezione.
@@ -155,7 +155,7 @@ def test_mode_python_fallback_on_c_error(crypto_data, base_config):
     decrypted = crypto.decrypt_aes_gcm(ciphertext, key, iv, tag)
     
     assert decrypted == plaintext
-    assert crypto.stats['c_module_used'] > 0 # Ha tentato il C
+    assert crypto.stats['rust_module_used'] > 0 # Ha tentato il C
     assert crypto.stats['python_fallback'] == 1 # Ha usato il fallback
     assert crypto.stats['errors'] == 1 # Ha registrato l'errore C
 

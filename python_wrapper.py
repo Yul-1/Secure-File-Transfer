@@ -28,10 +28,10 @@ from contextlib import contextmanager
 from logging.handlers import RotatingFileHandler
 
 try:
-    import crypto_accelerator as crypto_c 
-    C_MODULE_AVAILABLE = True
+    import crypto_accelerator as crypto_rust
+    RUST_MODULE_AVAILABLE = True
 except ImportError as e:
-    C_MODULE_AVAILABLE = False
+    RUST_MODULE_AVAILABLE = False
 
 MAX_BUFFER_SIZE = 10 * 1024 * 1024
 MIN_BUFFER_SIZE = 1
@@ -51,8 +51,8 @@ if not logger.handlers:
     console.setFormatter(formatter)
     logger.addHandler(console)
 
-if C_MODULE_AVAILABLE:
-    logger.info("C acceleration module loaded successfully")
+if RUST_MODULE_AVAILABLE:
+    logger.info("Rust acceleration module loaded successfully")
 
 def _clear_memory(data: bytes) -> None:
     """
@@ -97,18 +97,18 @@ class SecureCrypto:
     def __init__(self, config: Optional[SecurityConfig] = None):
         """ Initialize wrapper with secure configuration """
         self.config = config or SecurityConfig()
-        self.use_c = self.config.use_hardware_acceleration and C_MODULE_AVAILABLE
+        self.use_rust = self.config.use_hardware_acceleration and RUST_MODULE_AVAILABLE
         self._lock = threading.RLock()
         
         self.stats = {
             'encryptions': 0, 'decryptions': 0, 'hashes': 0,
-            'c_module_used': 0, 'python_fallback': 0, 'errors': 0
+            'rust_module_used': 0, 'python_fallback': 0, 'errors': 0
         }
-        
-        self._key_cache: Dict[str, bytes] = {} 
-        self._key_cache_order: list[str] = [] 
-        
-        logger.info(f"SecureCrypto initialized (C module: {self.use_c})")
+
+        self._key_cache: Dict[str, bytes] = {}
+        self._key_cache_order: list[str] = []
+
+        logger.info(f"SecureCrypto initialized (Rust module: {self.use_rust})")
     
     def _validate_size(self, size: int, name: str = "buffer") -> None:
         """Buffer size validation (DoS protection)"""
@@ -134,16 +134,16 @@ class SecureCrypto:
     def generate_random(self, num_bytes: int) -> bytes:
         """ Generate secure random bytes """
         self._validate_size(num_bytes, "Random bytes")
-        
+
         with self._secure_operation("generate_random"):
-            if self.use_c:
+            if self.use_rust:
                 try:
                     with self._lock:
-                        self.stats['c_module_used'] += 1
-                    return crypto_c.generate_secure_random(num_bytes)
+                        self.stats['rust_module_used'] += 1
+                    return crypto_rust.generate_secure_random(num_bytes)
                 except Exception as e:
-                    logger.debug(f"C module failed for random, falling back: {e}")
-            
+                    logger.debug(f"Rust module failed for random, falling back: {e}")
+
             with self._lock:
                 self.stats['python_fallback'] += 1
             return secrets.token_bytes(num_bytes)
@@ -211,25 +211,24 @@ class SecureCrypto:
     def encrypt_aes_gcm(self, data: bytes, key: bytes, iv: bytes, aad: bytes = None) -> Tuple[bytes, bytes]:
         """ AES-256-GCM encryption with fallback and AAD support """
         self._validate_size(len(data), "Plaintext")
-        
+
         with self._secure_operation("encrypt"):
-            if self.use_c:
+            if self.use_rust:
                 try:
                     with self._lock:
-                        self.stats['c_module_used'] += 1
-                    # Pass aad to C module (if aad is None, the C module handles it as empty optional)
-                    return crypto_c.aes_gcm_encrypt(data, key, iv, aad if aad else b"")
+                        self.stats['rust_module_used'] += 1
+                    return crypto_rust.aes_gcm_encrypt(data, key, iv, aad if aad else b"")
                 except Exception as e:
-                    logger.debug(f"C module failed for encrypt, falling back: {e}")
+                    logger.debug(f"Rust module failed for encrypt, falling back: {e}")
                     with self._lock:
                         self.stats['errors'] += 1
-            
+
             with self._lock:
                 self.stats['python_fallback'] += 1
-            
+
             if len(key) != AES_KEY_SIZE or len(iv) != AES_NONCE_SIZE:
                 raise ValueError("Invalid key or IV size for AES-256-GCM")
-                
+
             cipher = Cipher(algorithms.AES(key), modes.GCM(iv), backend=default_backend())
             encryptor = cipher.encryptor()
             if aad:
@@ -243,21 +242,21 @@ class SecureCrypto:
         self._validate_size(len(ciphertext), "Ciphertext")
 
         with self._secure_operation("decrypt"):
-            if self.use_c:
+            if self.use_rust:
                 try:
                     with self._lock:
-                        self.stats['c_module_used'] += 1
-                    return crypto_c.aes_gcm_decrypt(ciphertext, key, iv, tag, aad if aad else b"")
+                        self.stats['rust_module_used'] += 1
+                    return crypto_rust.aes_gcm_decrypt(ciphertext, key, iv, tag, aad if aad else b"")
                 except Exception as e:
-                    logger.debug(f"C module failed for decrypt, falling back: {e}")
+                    logger.debug(f"Rust module failed for decrypt, falling back: {e}")
                     with self._lock:
                         self.stats['errors'] += 1
             with self._lock:
                 self.stats['python_fallback'] += 1
-            
+
             if len(key) != AES_KEY_SIZE or len(iv) != AES_NONCE_SIZE or len(tag) != AES_TAG_SIZE:
                 raise ValueError("Invalid key, IV or tag size for AES-256-GCM")
-            
+
             try:
                 cipher = Cipher(algorithms.AES(key), modes.GCM(iv, tag), backend=default_backend())
                 decryptor = cipher.decryptor()
@@ -269,63 +268,46 @@ class SecureCrypto:
                 
     def compare_digest(self, a: bytes, b: bytes) -> bool:
         """ Constant-time comparison to prevent timing attacks """
-        if self.use_c:
+        if self.use_rust:
             try:
-                return crypto_c.compare_digest(a, b)
+                return crypto_rust.compare_digest(a, b)
             except Exception as e:
-                logger.debug(f"C module failed for compare_digest, falling back: {e}")
-        
+                logger.debug(f"Rust module failed for compare_digest, falling back: {e}")
+
         return hmac.compare_digest(a, b)
 
 
-def compile_c_module():
-    """Compile C module with security flags (DoS/stack-smashing protection)"""
-    print("Attempting to compile C module...")
-    
-    c_file_name = "crypto_accelerator.c"
-    
-    include_path = sysconfig.get_path('include')
+def compile_rust_module():
+    """Compile Rust module using maturin"""
+    print("Attempting to compile Rust module...")
 
-    compile_cmd = [
-        "gcc", "-shared", "-fPIC", "-O3", 
-        f"-I{include_path}",
-        "-march=native", 
-        "-D_FORTIFY_SOURCE=2", 
-        "-fstack-protector-strong",
-        "-Wl,-z,relro,-z,now",
-        c_file_name, 
-        "-o", "crypto_accelerator.so",
-        "-lcrypto",
-    ]
-    
-    if platform.system() == "Darwin":
-        compile_cmd[0] = "clang"
-        compile_cmd[1] = "-dynamiclib"
-        compile_cmd[-2] = "crypto_accelerator.dylib"
-        compile_cmd = [c for c in compile_cmd if not c.startswith("-Wl,-z")]
-
-    elif platform.system() == "Windows":
-        print("Windows compilation requires Visual Studio, skipping compilation.")
+    if not Path("Cargo.toml").exists():
+        print("Cargo.toml not found. Rust module not available in this directory.")
         return False
-        
+
     try:
-        result = subprocess.run(compile_cmd, capture_output=True, text=True)
+        result = subprocess.run(
+            ["maturin", "develop", "--release"],
+            capture_output=True,
+            text=True
+        )
         if result.returncode != 0:
             print(f"Compilation failed:\n{result.stderr}")
             return False
-        print(f"✓ C module compiled successfully as {compile_cmd[-2]}")
+        print("Rust module compiled successfully")
         return True
     except FileNotFoundError:
-        print("GCC/Clang not found. Please install build tools.")
+        print("maturin not found. Install with: pip install maturin")
+        print("Also ensure Rust toolchain is installed: https://rustup.rs/")
         return False
 
 def test_integration():
     """Run integration tests to verify fallback"""
     print("\n--- Running Integration Tests ---")
     crypto = SecureCrypto()
-    
+
     key = crypto.generate_random(AES_KEY_SIZE)
-    print(f"Random key generated (len: {len(key)}) using {'C' if crypto.stats['c_module_used'] > 0 else 'Python'}")
+    print(f"Random key generated (len: {len(key)}) using {'Rust' if crypto.stats['rust_module_used'] > 0 else 'Python'}")
     
     plaintext = b"This is a secret message" * 10
     iv = crypto.generate_random(AES_NONCE_SIZE)
@@ -374,12 +356,12 @@ def benchmark_comparison():
         avg_time = sum(times) / iterations
         print(f"{label}: {avg_time:.4f}s (Avg over {iterations} runs)")
 
-    if crypto.use_c:
+    if crypto.use_rust:
         try:
-            print("C Module Encryption:")
-            run_op(lambda: crypto_c.aes_gcm_encrypt(data, key, iv, b""), "C Encrypt")
+            print("Rust Module Encryption:")
+            run_op(lambda: crypto_rust.aes_gcm_encrypt(data, key, iv, b""), "Rust Encrypt")
         except Exception:
-            print("C Encrypt failed, skipping.")
+            print("Rust Encrypt failed, skipping.")
 
     print("Python Fallback Encryption:")
     run_op(lambda: crypto.encrypt_aes_gcm(data, key, iv), "Python Encrypt")
@@ -389,20 +371,20 @@ def benchmark_comparison():
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='Secure Crypto Wrapper')
     parser.add_argument('--test', action='store_true', help='Run integration tests')
     parser.add_argument('--benchmark', action='store_true', help='Run benchmark')
-    parser.add_argument('--compile', action='store_true', help='Compile C module')
-    
+    parser.add_argument('--compile', action='store_true', help='Compile Rust module')
+
     args = parser.parse_args()
-    
+
     if args.compile:
-        compile_c_module()
-    
+        compile_rust_module()
+
     if args.test:
         test_integration()
-    
+
     if args.benchmark:
         benchmark_comparison()
 
