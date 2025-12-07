@@ -25,3 +25,4 @@ tests/*.txt
 
 # Session and sensitive documentation
 SESSION_LOG.md
+target/
