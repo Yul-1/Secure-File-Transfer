@@ -1,7 +1,7 @@
 # Secure File Transfer System
 
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-2.7-blue)](https://github.com/Yul-1/SFT)
+[![Version](https://img.shields.io/badge/version-1.8.0-blue)](https://github.com/Yul-1/SFT)
 [![Security](https://img.shields.io/badge/security-hardened-blueviolet)](https://github.com/Yul-1/SFT)
 [![Proxy Support](https://img.shields.io/badge/proxy-SOCKS4%2F5%20%7C%20HTTP-green)](https://github.com/Yul-1/SFT)
 [![Tests](https://img.shields.io/badge/tests-comprehensive-success)](https://github.com/Yul-1/SFT)
@@ -26,13 +26,13 @@
 
 Secure File Transfer is a **bidirectional** secure file transfer system designed from the ground up with a "security-first" architecture. The project combines the speed of hardware-accelerated cryptography in C with the security and flexibility of Python, creating a robust solution for secure file transfer over untrusted networks.
 
-**Current version: 2.7** - Complete support for upload, download, remote file listing, and proxy connectivity with enhanced cryptographic security.
+**Current version: 1.8.0** - Complete support for upload, download, remote file listing, and proxy connectivity with enhanced cryptographic security.
 
 ### Why Secure File Transfer?
 
 While established protocols like SCP and SFTP exist, Secure File Transfer serves as an in-depth study on implementing secure multi-layered software. The system implements advanced countermeasures against common vulnerabilities, offering a modern alternative with particular focus on memory security and resistance to sophisticated attacks.
 
-### Key Features v2.7
+### Key Features v1.8.0
 - **Secure upload** of files to the server
 - **Secure download** of files from the server
 - **Remote listing** to view available files
@@ -152,7 +152,7 @@ sequenceDiagram
 
 ## Security
 
-### Security Enhancements in v2.7
+### Security Enhancements in v1.7.0 - v1.8.0
 
 - **ECDH Migration**: Replaced RSA-4096 with X25519 Elliptic Curve Diffie-Hellman to eliminate RSA key exhaustion DoS attacks while maintaining strong security
 - **Ed25519 Signatures**: Added digital signature authentication for non-repudiation and enhanced identity verification
@@ -561,7 +561,7 @@ time python3 sft.py --mode client \
 
 ```
 SFT/
-├── sft.py                          # Main protocol (v2.7)
+├── sft.py                          # Main protocol (v1.8.0)
 ├── python_wrapper.py               # Cryptographic wrapper
 ├── crypto_accelerator.c            # C module (source)
 ├── requirements.txt                # Python dependencies (pip)
@@ -619,27 +619,98 @@ DEBUG=1 python3 sft.py --mode server --debug
 - **Tests**: Minimum 80% coverage for new features
 - **Documentation**: Docstrings for all public functions
 
-## Roadmap
+## Version History
 
-### Version 2.7 (Current)
+### Version 1.0.0
+- [x] Initial release
+- [x] Secure file transfer protocol implementation
+- [x] AES-256-GCM encryption with RSA-4096
+- [x] Basic TCP connection management
+- [x] Core cryptographic operations
+
+### Version 1.1.0
+- [x] Ping/pong handshake system implementation
+- [x] Client/server connection crash fixes
+- [x] Double handshake prevention
+- [x] Protocol corrections (Key ID handling, message alignment)
+- [x] Security test additions (nonce uniqueness, anti-replay)
+
+### Version 1.1.1
+- [x] Chunking, resume, and callbacks for file transfers
+- [x] Improved disconnection handling
+- [x] Removed rate limiting for file transfers
+- [x] Complete test suite achievement (27/27 tests passed)
+
+### Version 1.2.0
+- [x] Race condition fix in _handle_connection
+- [x] Repository cleanup (removed compiled binaries)
+- [x] Pre-handshake rate-limiting with ConnectionLimiter
+- [x] DoS mitigation (CPU exhaustion from network scans)
+- [x] DoS mitigation test suite and traffic analysis
+
+### Version 1.3.0
+- [x] Concurrency race condition fixes (per-thread state)
+- [x] Added comprehensive documentation (README and requirements.txt)
+- [x] Critical security, integrity, and bug patches
+- [x] Logic and robustness improvements
+- [x] C-code corrections and integration test alignment
+
+### Version 1.3.1
+- [x] Resolved critical QA issues (#13, #17, #18, #20)
+
+### Version 1.4.0
+- [x] Penetration test fixes (Idle DoS, client memory persistence, PRNG seeding)
+- [x] Added installer.sh for Linux systems
+
+### Version 1.4.1
+- [x] Bidirectionality implementation (list and download)
+- [x] Information leak vulnerability fixes
+- [x] Path traversal protection enhancements
+
+### Version 1.5.0
+- [x] Resolved 12 critical bugs (memory corruption C, key cleanup, download overwrite with secure temp files, RateLimiter leak, missing validations)
+- [x] Comprehensive test suite updates
+- [x] QA fixes (clear_key_cache, bytes type assertions)
+
+### Version 1.6.0
+- [x] Complete documentation translation to English
+- [x] Component refactoring and renaming
+- [x] AAD (Additional Authenticated Data) implementation on packet headers
+- [x] Packet header authentication to prevent tampering attacks
+- [x] Minor fixes and improvements
+
+### Version 1.7.0
 - [x] Migration from RSA to ECDH (X25519) for key exchange
 - [x] Ed25519 digital signatures for authentication
-- [x] AAD (Additional Authenticated Data) on packet headers
-- [x] DoS resistance improvements (RSA exhaustion mitigation)
-- [x] Information leak prevention and side-channel protections
-- [x] Enhanced path traversal validation
-- [x] Replay bypass mitigation (sequence number tracking with sliding window)
+- [x] RSA key exhaustion DoS mitigation
 - [x] Zombie file protection (automatic removal of corrupted files after hash verification failure)
-- [x] SOCKS4/SOCKS5/HTTP proxy support for client connections
-- [ ] Linux installer script (install.sh)
+- [x] Replay bypass mitigation (sequence number tracking with sliding window algorithm)
+- [x] Updated test suite for new cryptography primitives
 
-### Version 2.8
+### Version 1.8.0 (Current)
+- [x] Proxy support implementation (SOCKS4/SOCKS5/HTTP)
+- [x] Proxy testing guide and system requirements documentation
+- [x] Enhanced SOCKS5 connection error diagnostics
+- [x] Dependency troubleshooting documentation
+- [x] Critical fix: Prevent source file truncation when client/server share directory
+- [x] Proxy connection testing tool
+- [x] Gitignore updates and repository cleanup
+
+### Version 1.8.x
+- [ ] Linux installer script improvements
+- [ ] Additional proxy authentication methods
+- [ ] Enhanced connection diagnostics
+
+### Version 1.9.0
+- [ ] Windows platform porting and compatibility
+- [ ] Simplified CLI interface with improved UX
 - [ ] Fingerprint/passphrase authentication to mitigate MitM attacks
 - [ ] File descriptor leak prevention
 - [ ] Connection rate limiting per IP with exponential backoff
 - [ ] Automatic log rotation and compression
+- [ ] Rust-based cryptography module (alternative to C implementation)
 
-### Version 3.0
+### Version 2.0.0
 - [ ] GUI with PyQt6
 - [ ] Simultaneous multi-file transfers
 - [ ] X.509 certificate authentication
@@ -648,7 +719,7 @@ DEBUG=1 python3 sft.py --mode server --debug
 - [ ] REST API for integration
 - [ ] Docker container
 
-### Version 4.0
+### Version 3.0.0
 - [ ] Complete IPv6 support
 - [ ] Peer-to-peer transfer
 - [ ] Post-quantum cryptography (Kyber)
