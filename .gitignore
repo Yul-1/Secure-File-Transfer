@@ -77,7 +77,6 @@ coverage.xml
 # === Rust ===
 # Build artifacts
 target/
-Cargo.lock
 
 # Backup files
 *.rs.bk
