@@ -1,7 +1,7 @@
 # Secure File Transfer (SFT)
 
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-2.0.0-blue)](https://github.com/Yul-1/SFT)
+[![Version](https://img.shields.io/badge/version-2.0.1-blue)](https://github.com/Yul-1/SFT)
 [![Security](https://img.shields.io/badge/security-hardened-blueviolet)](https://github.com/Yul-1/SFT)
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/Yul-1/SFT)
 
@@ -9,7 +9,7 @@
 
 Secure File Transfer (SFT) is a hardened bidirectional file transfer system designed with a "security-first" architecture. The project demonstrates production-grade implementation of cryptographic protocols, memory-safe low-level programming, and defense-in-depth security principles.
 
-**Current version: 2.0.0** - Reorganized into three independent implementations with isolated versioning and build systems.
+**Current version: 2.0.1** - Security enhancements and cryptographic hardening based on penetration testing results.
 
 ## Project Structure
 
@@ -33,7 +33,7 @@ SFT/
 │   ├── README.md                # Rust-specific documentation
 │   ├── sft.py                   # Protocol layer (Python)
 │   ├── python_wrapper.py        # Cryptographic wrapper
-│   ├── Cargo.toml               # Rust project configuration (v2.0.0)
+│   ├── Cargo.toml               # Rust project configuration (v2.0.1)
 │   ├── src/lib.rs               # Rust cryptographic module
 │   ├── requirements.txt         # Python dependencies (includes maturin)
 │   ├── system_requirements.txt  # System dependencies (Rust toolchain)
@@ -43,7 +43,7 @@ SFT/
     ├── README.md                # Windows installer documentation
     ├── LICENSE                  # MIT License
     └── installer/               # Inno Setup build infrastructure
-        ├── sft-setup.iss        # Installer script (v2.0.0)
+        ├── sft-setup.iss        # Installer script (v2.0.1)
         ├── build-installer.ps1  # Windows build script
         ├── build-installer-linux.sh  # Cross-platform build script
         ├── assets/              # Icons and resources
@@ -138,7 +138,7 @@ cd Windows\installer
 .\build-installer.ps1
 
 # Or download pre-built installer
-# Run SFT-Setup-2.0.0-win64.exe
+# Run SFT-Setup-2.0.1-win64.exe
 # Launch from Start Menu
 ```
 
@@ -229,7 +229,18 @@ Full benchmarks and profiling data are available in each implementation's README
 
 ## Version History
 
-**2.0.0** (Current):
+**2.0.1** (Current):
+- Security remediations based on comprehensive penetration testing
+- Enhanced symlink attack protection with O_NOFOLLOW
+- Strengthened X25519 public key validation against weak points
+- Improved filename sanitization with URL decoding and Unicode normalization
+- Enhanced memory clearing using ctypes.memset for guaranteed zeroing
+- Increased PBKDF2 iterations from 100,000 to 600,000 (OWASP 2024 recommendation)
+- Strengthened sequence number validation to prevent replay attacks
+- Updated cryptography library to version 43.0.1
+- Comprehensive security hardening across all implementations
+
+**2.0.0**:
 - Repository reorganization: Separated C, Rust, and Windows implementations
 - Independent versioning for each implementation
 - Streamlined build processes

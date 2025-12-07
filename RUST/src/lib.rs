@@ -19,7 +19,7 @@ const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB
 const AES_KEY_SIZE: usize = 32;
 const AES_IV_SIZE: usize = 12;
 const AES_TAG_SIZE: usize = 16;
-const MIN_PBKDF2_ITERATIONS: u32 = 100_000;
+const MIN_PBKDF2_ITERATIONS: u32 = 600_000;
 const MIN_PASSWORD_LENGTH: usize = 8;
 const MIN_SALT_LENGTH: usize = 8;
 
@@ -207,6 +207,24 @@ fn x25519_diffie_hellman<'py>(
         return Err(PyValueError::new_err("Public key must be 32 bytes"));
     }
 
+    const WEAK_POINTS: [[u8; 32]; 3] = [
+        [0u8; 32],
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0xe0, 0xeb, 0x7a, 0x7c, 0x3b, 0x41, 0xb8, 0xae,
+         0x16, 0x56, 0xe3, 0xfa, 0xf1, 0x9f, 0xc4, 0x6a,
+         0xda, 0x09, 0x8d, 0xeb, 0x9c, 0x32, 0xb1, 0xfd,
+         0x86, 0x62, 0x05, 0x16, 0x5f, 0x49, 0xb8, 0x00],
+    ];
+
+    for weak in &WEAK_POINTS {
+        if public_key == weak {
+            return Err(PyValueError::new_err(
+                "Weak public key rejected"
+            ));
+        }
+    }
+
     let secret_array: [u8; 32] = secret_key.try_into()
         .map_err(|_| PyValueError::new_err("Invalid secret key"))?;
     let public_array: [u8; 32] = public_key.try_into()
@@ -215,6 +233,12 @@ fn x25519_diffie_hellman<'py>(
     let secret = StaticSecret::from(secret_array);
     let public = X25519PublicKey::from(public_array);
     let shared = secret.diffie_hellman(&public);
+
+    if shared.as_bytes() == &[0u8; 32] {
+        return Err(PyValueError::new_err(
+            "Weak shared secret detected"
+        ));
+    }
 
     Ok(PyBytes::new(py, shared.as_bytes()))
 }
