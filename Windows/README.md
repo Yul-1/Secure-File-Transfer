@@ -1,8 +1,12 @@
 # SFT Windows Installer - Complete Build Guide
 
+**Version: 2.0.0**
+
 ## Overview
 
 This document describes the complete process for building a standalone Windows installer for the SFT (Secure File Transfer) Rust implementation. The installer packages Python runtime, Rust crypto module, and all dependencies into a single `.exe` file.
+
+This is the **Windows installer implementation** - completely independent and focused solely on Windows platform packaging and distribution.
 
 ## Installer Architecture
 
@@ -17,7 +21,7 @@ This document describes the complete process for building a standalone Windows i
 ### Installer Components
 
 ```
-SFT-Setup-1.8.0-win64.exe
+SFT-Setup-2.0.0-win64.exe
 │
 ├── Python 3.11.9 Embedded Runtime (~30 MB)
 │   ├── python311.dll
@@ -131,8 +135,8 @@ C:\Program Files\SFT\
 2. **Clone Repository and Navigate to Rust Implementation**
 
    ```powershell
-   git clone https://github.com/yourusername/SFT.git
-   cd "SFT\Linux_and _other_distribution_(RUST)"
+   git clone https://github.com/Yul-1/Secure-File-Transfer.git
+   cd SFT\Windows
    git checkout feature-windows-installer
    ```
 
@@ -153,7 +157,7 @@ C:\Program Files\SFT\
 
    The installer will be created at:
    ```
-   installer\output\SFT-Setup-1.8.0-win64.exe
+   installer\output\SFT-Setup-2.0.0-win64.exe
    ```
 
    Expected size: ~50-70 MB (compressed)
@@ -253,7 +257,7 @@ The build process consists of 9 automated steps:
 
 9. **Inno Setup Compilation**
    - Compiles `installer/sft-setup.iss` script
-   - Creates final `SFT-Setup-1.8.0-win64.exe` in `installer/output/`
+   - Creates final `SFT-Setup-2.0.0-win64.exe` in `installer/output/`
 
 ### Customization Points
 
@@ -263,7 +267,7 @@ Replace `installer/assets/sft.ico` with your custom icon (256x256 recommended).
 **Version Bump:**
 Edit `installer/sft-setup.iss`:
 ```pascal
-#define MyAppVersion "1.8.0"  // Change version here
+#define MyAppVersion "2.0.0"  // Change version here
 ```
 
 **Application Metadata:**
@@ -417,8 +421,8 @@ No CLI flags currently; modify script directly for customization.
 1. **GitHub Releases**
    ```bash
    # Tag release
-   git tag -a v1.8.0 -m "Windows installer release"
-   git push origin v1.8.0
+   git tag -a v2.0.0 -m "Windows installer release"
+   git push origin v2.0.0
 
    # Upload installer .exe to GitHub release
    ```
@@ -426,10 +430,10 @@ No CLI flags currently; modify script directly for customization.
 2. **Checksums**
    ```powershell
    # Windows (PowerShell)
-   Get-FileHash .\SFT-Setup-1.8.0-win64.exe -Algorithm SHA256
+   Get-FileHash .\SFT-Setup-2.0.0-win64.exe -Algorithm SHA256
 
    # Linux
-   sha256sum SFT-Setup-1.8.0-win64.exe
+   sha256sum SFT-Setup-2.0.0-win64.exe
    ```
 
    Publish checksum alongside installer for user verification.
@@ -449,7 +453,7 @@ Provide users with:
 
 2. **Installation Steps**
    ```
-   1. Download SFT-Setup-1.8.0-win64.exe
+   1. Download SFT-Setup-2.0.0-win64.exe
    2. Right-click > Properties > Unblock (if from internet)
    3. Double-click to run installer
    4. Follow installation wizard
@@ -612,7 +616,13 @@ The installer scripts are part of the SFT project and follow the same license as
 
 ## Changelog
 
-### v1.8.0 (Initial Release)
+### v2.0.0 (Current - Windows Installer)
+- [x] Repository reorganization: Separated C, Rust, and Windows implementations
+- [x] Windows installer isolated in standalone directory
+- [x] Independent versioning starting at 2.0.0
+- [x] Complete Windows build infrastructure with Inno Setup
+
+### v1.8.0 (Initial Windows Installer)
 - Complete Windows installer implementation
 - Inno Setup 6.x based
 - Python 3.11.9 embedded runtime
