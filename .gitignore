@@ -1,29 +1,189 @@
+# ============================================================================
+# SFT (Secure File Transfer) - Unified .gitignore
+# Covers Python, C, Rust implementations
+# ============================================================================
+
+# === Python ===
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+*.virtualenv
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
+*.py[cod]
+*$py.class
 *.pyc
 *.pyo
 *.pyd
 
-# Virtual environment
-venv/
-.venv/
-*.env
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Log e file di output
-secure_transfer.log
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
 *.log
+.pytest_cache/
+.hypothesis/
+
+# === C ===
+# Compiled objects
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# === Rust ===
+# Build artifacts
+target/
+Cargo.lock
+
+# Backup files
+*.rs.bk
+
+# === Project-Specific ===
+# Received files directory
 ricevuti/
 *.part
 .tmp_*
 
-# File di test generati
+# Log files
+*.log
+secure_transfer.log
+crypto_wrapper.log
+
+# Test artifacts
+**/tests/*.pcapng
+**/tests/*.csv
+**/tests/*.txt
 file.txt
+
+# Compiled C acceleration module
 crypto_accelerator.so
-tests/*.pcapng
-tests/*.csv
-tests/*.txt
 
 # Session and sensitive documentation
 SESSION_LOG.md
-target/
+
+# Generated environment files
+*.env
+.env
+.env.local
+
+# === IDE / Editors ===
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm / IntelliJ
+.idea/
+*.iml
+
+# Claude Code
 .claude/
+
+# Vim
+*.swp
+*.swo
+*~
+.*.swp
+.*.swo
+
+# Emacs
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# === OS-Specific ===
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.Trash-*
+
+# === Documentation Artifacts ===
+# Temporary markdown files (project uses README.md and SESSION_LOG.md only)
+*.md.tmp
+*.md.bak
+
+# Audit reports and temporary docs (keep committed ones)
+*_DRAFT.md
+*_TEMP.md
+
+# === Security ===
+# Private keys (should never be committed)
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Credentials
+credentials.json
+secrets.json
+
+# === Miscellaneous ===
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Temporary files
+*.tmp
+.tmp/
+temp/
+tmp/

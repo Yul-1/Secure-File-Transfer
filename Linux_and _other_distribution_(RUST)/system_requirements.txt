@@ -1,0 +1,83 @@
+# System Requirements for Secure File Transfer
+
+## Linux (Ubuntu/Debian)
+```bash
+sudo apt update
+sudo apt install -y build-essential python3-dev libssl-dev python3-pip git python3-venv
+# Rust toolchain
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+## Linux (RHEL/CentOS/Fedora)
+```bash
+sudo yum groupinstall "Development Tools"
+sudo yum install -y python3-devel openssl-devel python3-pip git
+# Rust toolchain
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+## Linux (Alpine)
+```bash
+apk add --no-cache gcc musl-dev python3-dev libffi-dev openssl-dev make git cargo rust
+```
+
+## macOS
+```bash
+# Install Homebrew if not present: https://brew.sh
+brew install python openssl rust
+export LDFLAGS="-L$(brew --prefix openssl)/lib"
+export CPPFLAGS="-I$(brew --prefix openssl)/include"
+```
+
+## Windows
+### Prerequisites:
+1. **Visual Studio Build Tools** (not required for Rust module, but recommended for other dependencies)
+   - Download from: https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022
+   - Select "Desktop development with C++" workload
+
+2. **Python 3.9+**
+   - Download from: https://www.python.org/downloads/
+   - Ensure "Add Python to PATH" is checked during installation
+
+3. **Rust Toolchain**
+   - Download rustup from: https://rustup.rs/
+   - Run: `rustup-init.exe`
+   - Follow the installer instructions
+   - Restart terminal after installation
+
+### Installation:
+```powershell
+# Verify Rust installation
+rustc --version
+cargo --version
+
+# Install Python dependencies (from project directory)
+python -m pip install -r requirements.txt
+
+# Compile Rust module
+python python_wrapper.py --compile
+```
+
+## Version Requirements
+
+### Minimum Versions:
+- Python: 3.9+
+- Rust: 1.70+
+- Cargo: 1.70+
+
+### Verification:
+```bash
+python3 --version          # Should be >= 3.9
+rustc --version           # Should be >= 1.70
+cargo --version           # Should be >= 1.70
+pip3 --version
+```
+
+## Notes
+
+- The Rust module is **cross-platform** and works on Linux, macOS, and Windows
+- No OpenSSL dependency required for the Rust module (pure Rust cryptography)
+- On Windows, the Rust toolchain handles all compilation automatically
+- The system will automatically fall back to pure Python if Rust module compilation fails
