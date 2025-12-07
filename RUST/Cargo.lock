@@ -102,7 +102,7 @@ dependencies = [
 
 [[package]]
 name = "crypto_accelerator"
-version = "1.8.0"
+version = "2.0.0"
 dependencies = [
  "aes-gcm",
  "ed25519-dalek",

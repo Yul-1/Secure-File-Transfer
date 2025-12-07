@@ -178,6 +178,9 @@ $RECYCLE.BIN/
 *_TEMP.md
 
 # === Security ===
+# Penetration testing reports
+Pen-Test/
+
 # Private keys (should never be committed)
 *.pem
 *.key
