@@ -82,6 +82,21 @@ Cargo.lock
 # Backup files
 *.rs.bk
 
+# === Windows Installer Artifacts ===
+# Installer build directories
+**/installer/python-embedded/
+**/installer/site-packages/
+**/installer/output/
+**/installer/assets/*.ico
+**/installer/vc_redist.x64.exe
+
+# Wheel files (keep in target/wheels/ only)
+*.whl
+
+# Inno Setup temporary files
+**/installer/*.tmp
+**/installer/Setup*.exe
+
 # === Project-Specific ===
 # Received files directory
 ricevuti/

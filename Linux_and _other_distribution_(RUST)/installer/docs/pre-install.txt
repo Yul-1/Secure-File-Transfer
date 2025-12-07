@@ -1,0 +1,61 @@
+SFT - Secure File Transfer
+===========================
+
+Version: 1.8.0
+
+IMPORTANT INFORMATION BEFORE INSTALLATION
+==========================================
+
+What is SFT?
+------------
+SFT (Secure File Transfer) is a highly secure file transfer system using
+state-of-the-art cryptography:
+
+- ECDH (X25519) for key exchange
+- Ed25519 for digital signatures
+- AES-256-GCM for authenticated encryption
+- Rust-accelerated cryptographic operations
+
+System Requirements
+-------------------
+- Windows 8 or later (Windows 8/8.1/10/11)
+- 64-bit processor (x86_64)
+- At least 100 MB free disk space
+- Network connectivity for file transfers
+- Visual C++ Redistributable 2015-2022 (will be installed if missing)
+
+What Will Be Installed
+-----------------------
+- Python 3.11 embedded runtime (~30 MB)
+- SFT application files
+- Rust crypto_accelerator module (high-performance cryptography)
+- Required Python dependencies (cryptography, PyNaCl, etc.)
+- Launcher scripts for easy access
+
+Installation Directory
+----------------------
+Default: C:\Program Files\SFT\
+
+The installer will:
+- Create application directory
+- Install all required components
+- Configure Python environment
+- Create Start Menu shortcuts
+- Optionally create desktop shortcuts
+
+Administrator Rights
+--------------------
+This installation requires administrator privileges to install to
+Program Files and register the application.
+
+Privacy Notice
+--------------
+SFT does not collect or transmit any telemetry data. All cryptographic
+operations are performed locally. File transfers are end-to-end encrypted.
+
+Support
+-------
+For documentation, issues, and updates, visit:
+https://github.com/yourusername/SFT
+
+Press "Next" to continue with the installation.

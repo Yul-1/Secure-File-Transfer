@@ -25,3 +25,7 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+
+# Windows-specific optimizations
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
