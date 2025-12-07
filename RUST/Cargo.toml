@@ -1,6 +1,6 @@
 [package]
 name = "crypto_accelerator"
-version = "1.8.0"
+version = "2.0.0"
 edition = "2021"
 authors = ["SFT Contributors"]
 
@@ -25,3 +25,7 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+
+# Windows-specific optimizations
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -1,7 +1,7 @@
-# Secure File Transfer System
+# Secure File Transfer System - C Implementation
 
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-1.8.0-blue)](https://github.com/Yul-1/SFT)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue)](https://github.com/Yul-1/SFT)
 [![Security](https://img.shields.io/badge/security-hardened-blueviolet)](https://github.com/Yul-1/SFT)
 [![Proxy Support](https://img.shields.io/badge/proxy-SOCKS4%2F5%20%7C%20HTTP-green)](https://github.com/Yul-1/SFT)
 [![Tests](https://img.shields.io/badge/tests-comprehensive-success)](https://github.com/Yul-1/SFT)
@@ -24,15 +24,15 @@
 
 ## Overview
 
-Secure File Transfer is a **bidirectional** secure file transfer system designed from the ground up with a "security-first" architecture. The project combines the speed of hardware-accelerated cryptography in C with the security and flexibility of Python, creating a robust solution for secure file transfer over untrusted networks.
+This is the **C implementation** of the Secure File Transfer system - a bidirectional secure file transfer solution designed with hardware-accelerated cryptography for maximum performance on Linux/Unix platforms.
 
-**Current version: 1.8.0** - Complete support for upload, download, remote file listing, and proxy connectivity with enhanced cryptographic security.
+**Current version: 2.0.0** - C-accelerated cryptographic operations with OpenSSL integration. Complete support for upload, download, remote file listing, and proxy connectivity.
 
 ### Why Secure File Transfer?
 
 While established protocols like SCP and SFTP exist, Secure File Transfer serves as an in-depth study on implementing secure multi-layered software. The system implements advanced countermeasures against common vulnerabilities, offering a modern alternative with particular focus on memory security and resistance to sophisticated attacks.
 
-### Key Features v1.8.0
+### Key Features v2.0.0
 - **Secure upload** of files to the server
 - **Secure download** of files from the server
 - **Remote listing** to view available files
@@ -273,7 +273,7 @@ pkg-config --cflags openssl # Should return OpenSSL paths
 ```bash
 # 1. Clone the repository
 git clone https://github.com/Yul-1/Secure-File-Transfer
-cd SFT
+cd SFT/C
 
 # 2. Create virtual environment (recommended)
 python3 -m venv venv
@@ -560,8 +560,8 @@ time python3 sft.py --mode client \
 ### Project Structure
 
 ```
-SFT/
-├── sft.py                          # Main protocol (v1.8.0)
+C/
+├── sft.py                          # Main protocol (v2.0.0)
 ├── python_wrapper.py               # Cryptographic wrapper
 ├── crypto_accelerator.c            # C module (source)
 ├── requirements.txt                # Python dependencies (pip)
@@ -591,7 +591,7 @@ SFT/
 ```bash
 # Setup development environment
 git clone https://github.com/Yul-1/Secure-File-Transfer
-cd SFT
+cd SFT/C
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -687,7 +687,7 @@ DEBUG=1 python3 sft.py --mode server --debug
 - [x] Replay bypass mitigation (sequence number tracking with sliding window algorithm)
 - [x] Updated test suite for new cryptography primitives
 
-### Version 1.8.0 (Current)
+### Version 1.8.0
 - [x] Proxy support implementation (SOCKS4/SOCKS5/HTTP)
 - [x] Proxy testing guide and system requirements documentation
 - [x] Enhanced SOCKS5 connection error diagnostics
@@ -696,21 +696,18 @@ DEBUG=1 python3 sft.py --mode server --debug
 - [x] Proxy connection testing tool
 - [x] Gitignore updates and repository cleanup
 
-### Version 1.8.x
+### Version 2.0.0 (Current - C Implementation)
+- [x] Repository reorganization: Separated C, Rust, and Windows implementations
+- [x] C implementation isolated for Linux/Unix platforms
+- [x] Independent versioning starting at 2.0.0
+- [x] Streamlined build process for C-accelerated cryptography
+
+### Version 2.x.x
 - [ ] Linux installer script improvements
 - [ ] Additional proxy authentication methods
 - [ ] Enhanced connection diagnostics
 
-### Version 1.9.0
-- [ ] Windows platform porting and compatibility
-- [ ] Simplified CLI interface with improved UX
-- [ ] Fingerprint/passphrase authentication to mitigate MitM attacks
-- [ ] File descriptor leak prevention
-- [ ] Connection rate limiting per IP with exponential backoff
-- [ ] Automatic log rotation and compression
-- [ ] Rust-based cryptography module (alternative to C implementation)
-
-### Version 2.0.0
+### Version 3.0.0
 - [ ] GUI with PyQt6
 - [ ] Simultaneous multi-file transfers
 - [ ] X.509 certificate authentication
@@ -719,7 +716,7 @@ DEBUG=1 python3 sft.py --mode server --debug
 - [ ] REST API for integration
 - [ ] Docker container
 
-### Version 3.0.0
+### Version 4.0.0
 - [ ] Complete IPv6 support
 - [ ] Peer-to-peer transfer
 - [ ] Post-quantum cryptography (Kyber)
