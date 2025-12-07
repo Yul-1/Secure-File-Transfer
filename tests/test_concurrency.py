@@ -29,11 +29,11 @@ try:
     from python_wrapper import (
         SecureCrypto,
         SecurityConfig,
-        C_MODULE_AVAILABLE,
+        RUST_MODULE_AVAILABLE,
         AES_KEY_SIZE,
         AES_NONCE_SIZE
     )
-    if C_MODULE_AVAILABLE:
+    if RUST_MODULE_AVAILABLE:
          import crypto_accelerator as crypto_c
 
 except ImportError as e:
@@ -59,7 +59,7 @@ CONCURRENT_THREADS = 30
 @pytest.fixture(scope="module")
 def crypto_wrapper() -> SecureCrypto:
     """Fixture per un'istanza del wrapper C (se disponibile)."""
-    if not C_MODULE_AVAILABLE:
+    if not RUST_MODULE_AVAILABLE:
         pytest.skip("Modulo C non disponibile, salto test thread-safety C.")
         
     config = SecurityConfig(use_hardware_acceleration=True)

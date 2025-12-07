@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-use pyo3::exceptions::{PyValueError, PyMemoryError, PySystemError};
+use pyo3::exceptions::{PyValueError, PySystemError};
 
 use aes_gcm::{
     aead::{Aead, KeyInit, Payload},
@@ -9,7 +9,7 @@ use aes_gcm::{
 use sha2::{Sha256, Digest};
 use hmac::{Hmac, Mac};
 use pbkdf2::pbkdf2_hmac;
-use x25519_dalek::{EphemeralSecret, PublicKey as X25519PublicKey};
+use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use getrandom::getrandom;
 use subtle::ConstantTimeEq;
@@ -19,6 +19,9 @@ const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB
 const AES_KEY_SIZE: usize = 32;
 const AES_IV_SIZE: usize = 12;
 const AES_TAG_SIZE: usize = 16;
+const MIN_PBKDF2_ITERATIONS: u32 = 100_000;
+const MIN_PASSWORD_LENGTH: usize = 8;
+const MIN_SALT_LENGTH: usize = 8;
 
 #[pyfunction]
 fn aes_gcm_encrypt<'py>(
@@ -27,7 +30,7 @@ fn aes_gcm_encrypt<'py>(
     key: &[u8],
     iv: &[u8],
     aad: Option<&[u8]>,
-) -> PyResult<(&'py PyBytes, &'py PyBytes)> {
+) -> PyResult<(Bound<'py, PyBytes>, Bound<'py, PyBytes>)> {
     if key.len() != AES_KEY_SIZE {
         return Err(PyValueError::new_err("Key must be 32 bytes"));
     }
@@ -47,6 +50,9 @@ fn aes_gcm_encrypt<'py>(
     let nonce = Nonce::from_slice(nonce_array);
 
     let payload = if let Some(aad_data) = aad {
+        if aad_data.len() > MAX_BUFFER_SIZE {
+            return Err(PyValueError::new_err("AAD exceeds maximum size (10MB)"));
+        }
         Payload {
             msg: plaintext,
             aad: aad_data,
@@ -80,7 +86,7 @@ fn aes_gcm_decrypt<'py>(
     iv: &[u8],
     tag: &[u8],
     aad: Option<&[u8]>,
-) -> PyResult<&'py PyBytes> {
+) -> PyResult<Bound<'py, PyBytes>> {
     if key.len() != AES_KEY_SIZE {
         return Err(PyValueError::new_err("Key must be 32 bytes"));
     }
@@ -107,6 +113,9 @@ fn aes_gcm_decrypt<'py>(
     combined.extend_from_slice(tag);
 
     let payload = if let Some(aad_data) = aad {
+        if aad_data.len() > MAX_BUFFER_SIZE {
+            return Err(PyValueError::new_err("AAD exceeds maximum size (10MB)"));
+        }
         Payload {
             msg: &combined,
             aad: aad_data,
@@ -128,7 +137,7 @@ fn aes_gcm_decrypt<'py>(
 }
 
 #[pyfunction]
-fn generate_secure_random<'py>(py: Python<'py>, num_bytes: usize) -> PyResult<&'py PyBytes> {
+fn generate_secure_random<'py>(py: Python<'py>, num_bytes: usize) -> PyResult<Bound<'py, PyBytes>> {
     if num_bytes == 0 || num_bytes > MAX_BUFFER_SIZE {
         return Err(PyValueError::new_err(format!(
             "Invalid buffer size: {}. Must be between 1 and {} bytes",
@@ -138,7 +147,7 @@ fn generate_secure_random<'py>(py: Python<'py>, num_bytes: usize) -> PyResult<&'
 
     let mut buffer = vec![0u8; num_bytes];
     getrandom(&mut buffer)
-        .map_err(|_| PySystemError::new_err("CSPRNG failed (getrandom error)"))?;
+        .map_err(|e| PySystemError::new_err(format!("CSPRNG failed: {:?}", e)))?;
 
     let result = PyBytes::new(py, &buffer);
     buffer.zeroize();
@@ -147,7 +156,7 @@ fn generate_secure_random<'py>(py: Python<'py>, num_bytes: usize) -> PyResult<&'
 }
 
 #[pyfunction]
-fn sha256_hash<'py>(py: Python<'py>, data: &[u8]) -> PyResult<&'py PyBytes> {
+fn sha256_hash<'py>(py: Python<'py>, data: &[u8]) -> PyResult<Bound<'py, PyBytes>> {
     if data.len() > MAX_BUFFER_SIZE {
         return Err(PyValueError::new_err("Data exceeds maximum size (10MB)"));
     }
@@ -169,12 +178,12 @@ fn compare_digest(a: &[u8], b: &[u8]) -> PyResult<bool> {
 }
 
 #[pyfunction]
-fn x25519_generate_keypair<'py>(py: Python<'py>) -> PyResult<(&'py PyBytes, &'py PyBytes)> {
+fn x25519_generate_keypair<'py>(py: Python<'py>) -> PyResult<(Bound<'py, PyBytes>, Bound<'py, PyBytes>)> {
     let mut secret_bytes = [0u8; 32];
     getrandom(&mut secret_bytes)
-        .map_err(|_| PySystemError::new_err("CSPRNG failed"))?;
+        .map_err(|e| PySystemError::new_err(format!("CSPRNG failed: {:?}", e)))?;
 
-    let secret = EphemeralSecret::from(secret_bytes);
+    let secret = StaticSecret::from(secret_bytes);
     let public = X25519PublicKey::from(&secret);
 
     let secret_result = PyBytes::new(py, &secret_bytes);
@@ -190,7 +199,7 @@ fn x25519_diffie_hellman<'py>(
     py: Python<'py>,
     secret_key: &[u8],
     public_key: &[u8],
-) -> PyResult<&'py PyBytes> {
+) -> PyResult<Bound<'py, PyBytes>> {
     if secret_key.len() != 32 {
         return Err(PyValueError::new_err("Secret key must be 32 bytes"));
     }
@@ -203,7 +212,7 @@ fn x25519_diffie_hellman<'py>(
     let public_array: [u8; 32] = public_key.try_into()
         .map_err(|_| PyValueError::new_err("Invalid public key"))?;
 
-    let secret = EphemeralSecret::from(secret_array);
+    let secret = StaticSecret::from(secret_array);
     let public = X25519PublicKey::from(public_array);
     let shared = secret.diffie_hellman(&public);
 
@@ -211,7 +220,7 @@ fn x25519_diffie_hellman<'py>(
 }
 
 #[pyfunction]
-fn ed25519_generate_keypair<'py>(py: Python<'py>) -> PyResult<(&'py PyBytes, &'py PyBytes)> {
+fn ed25519_generate_keypair<'py>(py: Python<'py>) -> PyResult<(Bound<'py, PyBytes>, Bound<'py, PyBytes>)> {
     let mut secret_bytes = [0u8; 32];
     getrandom(&mut secret_bytes)
         .map_err(|_| PySystemError::new_err("CSPRNG failed"))?;
@@ -232,9 +241,12 @@ fn ed25519_sign<'py>(
     py: Python<'py>,
     secret_key: &[u8],
     message: &[u8],
-) -> PyResult<&'py PyBytes> {
+) -> PyResult<Bound<'py, PyBytes>> {
     if secret_key.len() != 32 {
         return Err(PyValueError::new_err("Secret key must be 32 bytes"));
+    }
+    if message.len() > MAX_BUFFER_SIZE {
+        return Err(PyValueError::new_err("Message exceeds maximum size (10MB)"));
     }
 
     let secret_array: [u8; 32] = secret_key.try_into()
@@ -258,6 +270,9 @@ fn ed25519_verify(
     if signature.len() != 64 {
         return Err(PyValueError::new_err("Signature must be 64 bytes"));
     }
+    if message.len() > MAX_BUFFER_SIZE {
+        return Err(PyValueError::new_err("Message exceeds maximum size (10MB)"));
+    }
 
     let public_array: [u8; 32] = public_key.try_into()
         .map_err(|_| PyValueError::new_err("Invalid public key"))?;
@@ -276,10 +291,14 @@ fn hmac_sha256<'py>(
     py: Python<'py>,
     key: &[u8],
     message: &[u8],
-) -> PyResult<&'py PyBytes> {
+) -> PyResult<Bound<'py, PyBytes>> {
+    if message.len() > MAX_BUFFER_SIZE {
+        return Err(PyValueError::new_err("Message exceeds maximum size (10MB)"));
+    }
+
     type HmacSha256 = Hmac<Sha256>;
 
-    let mut mac = HmacSha256::new_from_slice(key)
+    let mut mac = <HmacSha256 as Mac>::new_from_slice(key)
         .map_err(|_| PyValueError::new_err("Invalid HMAC key length"))?;
     mac.update(message);
     let result = mac.finalize();
@@ -294,9 +313,21 @@ fn pbkdf2_derive_key<'py>(
     salt: &[u8],
     iterations: u32,
     output_len: usize,
-) -> PyResult<&'py PyBytes> {
-    if iterations == 0 {
-        return Err(PyValueError::new_err("Iterations must be > 0"));
+) -> PyResult<Bound<'py, PyBytes>> {
+    if password.len() < MIN_PASSWORD_LENGTH {
+        return Err(PyValueError::new_err(format!(
+            "Password must be at least {} bytes", MIN_PASSWORD_LENGTH
+        )));
+    }
+    if salt.len() < MIN_SALT_LENGTH {
+        return Err(PyValueError::new_err(format!(
+            "Salt must be at least {} bytes", MIN_SALT_LENGTH
+        )));
+    }
+    if iterations < MIN_PBKDF2_ITERATIONS {
+        return Err(PyValueError::new_err(format!(
+            "Iterations too low ({}). Minimum: {}", iterations, MIN_PBKDF2_ITERATIONS
+        )));
     }
     if output_len == 0 || output_len > MAX_BUFFER_SIZE {
         return Err(PyValueError::new_err("Invalid output length"));
@@ -317,7 +348,7 @@ fn benchmark() -> PyResult<()> {
 }
 
 #[pymodule]
-fn crypto_accelerator(_py: Python, m: &PyModule) -> PyResult<()> {
+fn crypto_accelerator(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(aes_gcm_encrypt, m)?)?;
     m.add_function(wrap_pyfunction!(aes_gcm_decrypt, m)?)?;
     m.add_function(wrap_pyfunction!(generate_secure_random, m)?)?;

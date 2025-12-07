@@ -57,7 +57,7 @@ def test_aes_gcm_encrypt_decrypt_safe_happy_path():
     
     # 2. Cifratura
     try:
-        ciphertext, tag = crypto_rust.aes_gcm_encrypt(plaintext, key, iv)
+        ciphertext, tag = crypto_rust.aes_gcm_encrypt(plaintext, key, iv, None)
     except Exception as e:
         pytest.fail(f"Cifratura (aes_gcm_encrypt) fallita: {e}")
         
@@ -66,7 +66,7 @@ def test_aes_gcm_encrypt_decrypt_safe_happy_path():
     
     # 3. Decifratura
     try:
-        decrypted = crypto_rust.aes_gcm_decrypt(ciphertext, key, iv, tag)
+        decrypted = crypto_rust.aes_gcm_decrypt(ciphertext, key, iv, tag, None)
     except Exception as e:
         pytest.fail(f"Decifratura (aes_gcm_decrypt) fallita: {e}")
         
@@ -81,8 +81,8 @@ def test_aes_gcm_encrypt_decrypt_safe_empty():
     iv = crypto_rust.generate_secure_random(AES_NONCE_SIZE)
     
     try:
-        ciphertext, tag = crypto_rust.aes_gcm_encrypt(plaintext, key, iv)
-        decrypted = crypto_rust.aes_gcm_decrypt(ciphertext, key, iv, tag)
+        ciphertext, tag = crypto_rust.aes_gcm_encrypt(plaintext, key, iv, None)
+        decrypted = crypto_rust.aes_gcm_decrypt(ciphertext, key, iv, tag, None)
     except Exception as e:
         pytest.fail(f"Test 'empty' fallito: {e}")
         
@@ -122,7 +122,7 @@ def test_aes_gcm_decrypt_safe_authentication_fail():
     iv = crypto_rust.generate_secure_random(AES_NONCE_SIZE)
     
     # 1. Cifratura
-    ciphertext, tag = crypto_rust.aes_gcm_encrypt(plaintext, key, iv)
+    ciphertext, tag = crypto_rust.aes_gcm_encrypt(plaintext, key, iv, None)
     
     # 2. Crea TAG non valido
     invalid_tag = os.urandom(AES_TAG_SIZE)
@@ -130,7 +130,7 @@ def test_aes_gcm_decrypt_safe_authentication_fail():
 
     # 3. Verifica fallimento decifratura (TAG ERRATO)
     with pytest.raises(ValueError, match="Decryption failed"):
-        crypto_rust.aes_gcm_decrypt(ciphertext, key, iv, invalid_tag)
+        crypto_rust.aes_gcm_decrypt(ciphertext, key, iv, invalid_tag, None)
     
     print("Test Auth Fail (Tag): OK")
 
@@ -142,7 +142,7 @@ def test_aes_gcm_decrypt_safe_key_fail():
     iv = crypto_rust.generate_secure_random(AES_NONCE_SIZE)
     
     # 1. Cifratura
-    ciphertext, tag = crypto_rust.aes_gcm_encrypt(plaintext, key, iv)
+    ciphertext, tag = crypto_rust.aes_gcm_encrypt(plaintext, key, iv, None)
     
     # 2. Crea Chiave non valida
     invalid_key = os.urandom(AES_KEY_SIZE)
@@ -151,7 +151,7 @@ def test_aes_gcm_decrypt_safe_key_fail():
     # 3. Verifica fallimento decifratura (CHIAVE ERRATA)
     with pytest.raises(ValueError, match="Decryption failed"):
         # 🟢 FIX (Analisi #4, #19): Esegui solo la chiamata che deve fallire
-        crypto_rust.aes_gcm_decrypt(ciphertext, invalid_key, iv, tag)
+        crypto_rust.aes_gcm_decrypt(ciphertext, invalid_key, iv, tag, None)
     
     print("Test Auth Fail (Key): OK")
 
@@ -163,7 +163,7 @@ def test_aes_gcm_decrypt_safe_ciphertext_fail():
     iv = crypto_rust.generate_secure_random(AES_NONCE_SIZE)
     
     # 1. Cifratura
-    ciphertext, tag = crypto_rust.aes_gcm_encrypt(plaintext, key, iv)
+    ciphertext, tag = crypto_rust.aes_gcm_encrypt(plaintext, key, iv, None)
     
     # 2. Corrompi il ciphertext
     invalid_ciphertext = bytearray(ciphertext)
@@ -172,7 +172,7 @@ def test_aes_gcm_decrypt_safe_ciphertext_fail():
 
     # 3. Verifica fallimento decifratura (CIPHERTEXT CORROTTO)
     with pytest.raises(ValueError, match="Decryption failed"):
-        crypto_rust.aes_gcm_decrypt(invalid_ciphertext, key, iv, tag)
+        crypto_rust.aes_gcm_decrypt(invalid_ciphertext, key, iv, tag, None)
     
     print("Test Auth Fail (Ciphertext): OK")
 
@@ -197,13 +197,13 @@ def test_aes_gcm_invalid_types():
 
     # Test 2: Decrypt
     with pytest.raises(TypeError):
-        crypto_rust.aes_gcm_decrypt("non-bytes", key, iv, tag) # data
+        crypto_rust.aes_gcm_decrypt("non-bytes", key, iv, tag, None) # data
     with pytest.raises(TypeError):
-        crypto_rust.aes_gcm_decrypt(data, "non-bytes", iv, tag) # key
+        crypto_rust.aes_gcm_decrypt(data, "non-bytes", iv, tag, None) # key
     with pytest.raises(TypeError):
-        crypto_rust.aes_gcm_decrypt(data, key, "non-bytes", tag) # iv
+        crypto_rust.aes_gcm_decrypt(data, key, "non-bytes", tag, None) # iv
     with pytest.raises(TypeError):
-        crypto_rust.aes_gcm_decrypt(data, key, iv, "non-bytes") # tag
+        crypto_rust.aes_gcm_decrypt(data, key, iv, "non-bytes", None) # tag
 
 def test_generate_random_bounds():
     """Verifica i limiti (min/max) per generate_secure_random."""
@@ -256,7 +256,7 @@ def test_sha256_hash_safe_bounds_max():
     oversized_data = b'\x00' * (MAX_BUFFER_SIZE + 1)
     
     # Verifica che il modulo C rifiuti input troppo grandi
-    with pytest.raises(ValueError, match="Invalid data for hashing size"):
+    with pytest.raises(ValueError, match="Data exceeds maximum size"):
         crypto_rust.sha256_hash(oversized_data)
     
     # Verifica che il limite esatto funzioni (edge case)
