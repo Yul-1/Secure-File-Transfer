@@ -1,0 +1,83 @@
+SFT - Installation Complete
+===========================
+
+Thank you for installing SFT Secure File Transfer!
+
+Installation Summary
+--------------------
+SFT has been successfully installed on your system.
+
+Installed Components:
+- Python 3.11 embedded runtime
+- SFT application (sft.py)
+- Rust crypto_accelerator module
+- All required dependencies
+- Launcher scripts
+
+Getting Started
+---------------
+You can launch SFT in the following ways:
+
+1. From Start Menu:
+   - "SFT Server" - Start as a file server
+   - "SFT Client" - Start as a file transfer client
+
+2. From Desktop (if shortcut was created):
+   - Double-click "SFT Secure File Transfer" icon
+
+3. From Command Line:
+   - Open Command Prompt
+   - Run: "C:\Program Files\SFT\sft.bat --help"
+
+Quick Start Examples
+--------------------
+Server Mode:
+  sft-server.bat --port 5555
+
+Client Mode (Send file):
+  sft-client.bat --send file.txt --host 192.168.1.100 --port 5555
+
+Client Mode (Receive file):
+  sft-client.bat --receive --host 192.168.1.100 --port 5555
+
+For detailed usage instructions, see:
+  C:\Program Files\SFT\README.md
+
+Security Notes
+--------------
+- Always verify the identity of transfer peers
+- SFT uses secure key exchange, but network security is your responsibility
+- Consider using SFT over VPN or trusted networks
+- Keep your installation updated
+
+Troubleshooting
+---------------
+If you encounter any issues:
+
+1. Verify Python is working:
+   C:\Program Files\SFT\python\python.exe --version
+
+2. Check Rust module:
+   Run sft.bat and look for "Rust acceleration module loaded successfully"
+
+3. Review logs:
+   C:\Program Files\SFT\secure_transfer.log
+
+4. Check firewall settings:
+   Ensure Windows Firewall allows SFT network connections
+
+Uninstallation
+--------------
+To uninstall SFT:
+- Control Panel > Programs > Uninstall a program
+- Select "SFT Secure File Transfer" and click Uninstall
+
+OR use the uninstaller from the Start Menu.
+
+Support
+-------
+Documentation: C:\Program Files\SFT\README.md
+GitHub: https://github.com/yourusername/SFT
+Issues: https://github.com/yourusername/SFT/issues
+
+Thank you for using SFT!
