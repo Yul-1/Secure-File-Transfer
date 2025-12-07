@@ -36,7 +36,7 @@ from jsonschema import validate, ValidationError
 BUFFER_SIZE = 4096
 KEY_ROTATION_INTERVAL = 300
 MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024
-PROTOCOL_VERSION = "2.0"
+PROTOCOL_VERSION = "2.0.1"
 DEFAULT_PORT = 5555
 MAX_PACKET_SIZE = 10 * 1024 * 1024
 SOCKET_TIMEOUT = 30
@@ -85,17 +85,20 @@ logger = logging.getLogger(__name__)
 
 def _clear_memory(data: Any) -> None:
     """
-    Pulizia sicura della memoria (Best-Effort in Python) per i dati sensibili.
-    Funziona SOLO su tipi mutabili (es. bytearray).
+    Secure memory clearing for sensitive data.
+    Works only on mutable types (bytearray).
+    Uses ctypes.memset for guaranteed zeroing.
     """
     if data is None:
         return
     try:
         if isinstance(data, bytearray):
-            for i in range(len(data)):
-                data[i] = 0
-    except Exception:
-        pass
+            import ctypes
+            if len(data) > 0:
+                ptr = (ctypes.c_char * len(data)).from_buffer(data)
+                ctypes.memset(ptr, 0, len(data))
+    except Exception as e:
+        logger.error(f"Memory clearing failed: {e}")
 
 class RateLimiter:
     """Rate limiting for DoS prevention with automatic TTL cleanup"""
@@ -205,10 +208,27 @@ class SecureKeyManager:
         )
 
     def compute_shared_secret(self, peer_public_bytes: bytes):
-        """Derive shared secret using X25519 exchange + PBKDF2."""
+        """Derive shared secret using X25519 exchange + PBKDF2 with weak key validation."""
+        WEAK_POINTS = [
+            bytes([0] * 32),
+            bytes([1] + [0] * 31),
+            bytes([0xe0, 0xeb, 0x7a, 0x7c, 0x3b, 0x41, 0xb8, 0xae,
+                   0x16, 0x56, 0xe3, 0xfa, 0xf1, 0x9f, 0xc4, 0x6a,
+                   0xda, 0x09, 0x8d, 0xeb, 0x9c, 0x32, 0xb1, 0xfd,
+                   0x86, 0x62, 0x05, 0x16, 0x5f, 0x49, 0xb8, 0x00])
+        ]
+
+        if peer_public_bytes in WEAK_POINTS:
+            raise ValueError("Weak public key rejected")
+
         with self._lock:
             peer_key = x25519.X25519PublicKey.from_public_bytes(peer_public_bytes)
             shared_secret = self.ephemeral_private.exchange(peer_key)
+
+            if shared_secret == bytes([0] * 32):
+                _clear_memory(shared_secret)
+                raise ValueError("Weak shared secret detected")
+
             self._derive_shared_secret(shared_secret)
             _clear_memory(shared_secret)
 
@@ -279,8 +299,8 @@ class SecureKeyManager:
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=64,
-            salt=b'secure_transfer_v2_ecdh', # Salt cambiato per nuova versione
-            iterations=100000,
+            salt=b'secure_transfer_v2_ecdh',
+            iterations=600000,
             backend=default_backend()
         )
         derived_material = kdf.derive(secret)
@@ -330,62 +350,149 @@ class SecureProtocol:
 
     def _validate_sequence_number(self, seq: int) -> bool:
         """
-        Validate incoming sequence number using sliding window algorithm.
-        Prevents replay bypass via FIFO queue flooding.
+        Strict monotonic sequence validation with limited forward jump tolerance.
+        Prevents replay attacks and sequence number forgery.
         """
         with self.sequence_lock:
-            # Reject if too old (outside window)
-            if seq < self.replay_window_base:
-                logger.warning(f"Sequence number {seq} is too old (base: {self.replay_window_base})")
+            if seq <= self.peer_sequence_number:
+                logger.error(f"Non-monotonic sequence: {seq} <= {self.peer_sequence_number}")
                 return False
 
-            # Reject if too far in future (potential attack)
-            if seq > self.replay_window_base + REPLAY_SEQUENCE_TOLERANCE:
-                logger.warning(f"Sequence number {seq} too far ahead (base: {self.replay_window_base})")
+            if seq > self.peer_sequence_number + 100:
+                logger.error(f"Sequence jump too large: {seq} (expected near {self.peer_sequence_number})")
                 return False
 
-            # Calculate position in window
             offset = seq - self.replay_window_base
 
-            # Check if already received
             if offset in self.replay_window:
                 logger.warning(f"Duplicate sequence number detected: {seq}")
                 return False
 
-            # Add to window
             self.replay_window.add(offset)
 
-            # Slide window if needed
             if len(self.replay_window) > REPLAY_WINDOW_SIZE:
-                # Find minimum offset to remove old entries
                 min_offset = min(self.replay_window)
                 self.replay_window = {o - min_offset for o in self.replay_window if o >= min_offset}
                 self.replay_window_base += min_offset
 
-            # Update expected sequence for next message
-            if seq >= self.peer_sequence_number:
-                self.peer_sequence_number = seq + 1
+            self.peer_sequence_number = seq
 
             return True
 
+    def safe_open_for_writing(self, path: Path, mode: str = 'wb'):
+        """
+        Safely open file for writing, preventing symlink attacks.
+        Uses O_NOFOLLOW to prevent TOCTOU race conditions.
+
+        Args:
+            path: Target file path (must be within OUTPUT_DIR)
+            mode: File open mode ('wb', 'ab', etc.)
+
+        Returns:
+            File handle
+
+        Raises:
+            SecurityError: If path is symlink or outside OUTPUT_DIR
+        """
+        import errno
+
+        abs_path = path.resolve()
+
+        try:
+            is_relative = abs_path.is_relative_to(OUTPUT_DIR.resolve())
+        except (ValueError, AttributeError):
+            is_relative = False
+
+        if not is_relative:
+            raise PermissionError(f"Path outside OUTPUT_DIR: {abs_path}")
+
+        if path.is_symlink():
+            raise PermissionError(f"Symlink detected: {path}")
+
+        flags = os.O_WRONLY | os.O_CREAT
+
+        if 'a' in mode:
+            flags |= os.O_APPEND
+        else:
+            flags |= os.O_TRUNC
+
+        flags |= os.O_NOFOLLOW
+
+        try:
+            fd = os.open(abs_path, flags, 0o600)
+            return os.fdopen(fd, mode)
+        except OSError as e:
+            if e.errno == errno.ELOOP:
+                raise PermissionError("Symlink detected via O_NOFOLLOW")
+            raise
+
     def sanitize_filename(self, filename: str) -> str:
-        """Sanitize filename to prevent path traversal"""
+        """
+        Comprehensive filename sanitization with defense against:
+        - Path traversal
+        - URL encoding bypasses
+        - Unicode overlong encoding
+        - Windows reserved names
+        - Trailing dots/spaces
+        - Null byte injection
+        """
+        import unicodedata
+        from urllib.parse import unquote
+
+        if not filename:
+            return "unnamed_file"
+
+        try:
+            filename = unquote(filename)
+        except Exception:
+            pass
+
+        try:
+            filename = unicodedata.normalize('NFKC', filename)
+        except Exception:
+            pass
+
+        filename = filename.replace('\x00', '')
         filename = os.path.basename(filename)
-        filename = re.sub(r'[^\w\s\-\.]', '', filename)
-        
-        if len(filename) > 255:
+        filename = filename.replace('/', '_')
+        filename = filename.replace('\\', '_')
+        filename = filename.replace('%2F', '_')
+        filename = filename.replace('%5C', '_')
+        filename = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
+        filename = filename.replace('..', '')
+        filename = filename.strip('. ')
+
+        parts = filename.split('.')
+        if len(parts) > 2:
+            filename = '_'.join(parts[:-1]) + '.' + parts[-1]
+
+        MAX_FILENAME_LENGTH = 200
+        if len(filename) > MAX_FILENAME_LENGTH:
             name, ext = os.path.splitext(filename)
-            if len(ext) > 21:
-                ext = ext[:21]
-            max_name_len = 255 - len(ext)
-            name = name[:max_name_len]
+            ext = ext[:20]
+            name = name[:MAX_FILENAME_LENGTH - len(ext)]
             filename = name + ext
-            
-        reserved = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'LPT1']
+
+        WINDOWS_RESERVED = {
+            'CON', 'PRN', 'AUX', 'NUL',
+            'COM1', 'COM2', 'COM3', 'COM4', 'COM5',
+            'COM6', 'COM7', 'COM8', 'COM9',
+            'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5',
+            'LPT6', 'LPT7', 'LPT8', 'LPT9'
+        }
+
         name_upper = filename.upper().split('.')[0]
-        if name_upper in reserved:
+        if name_upper in WINDOWS_RESERVED:
             filename = f"safe_{filename}"
-        return filename or "unnamed_file"
+
+        if filename.startswith('.'):
+            filename = '_' + filename[1:]
+
+        if not filename or filename == '.' or filename == '..':
+            filename = "unnamed_file"
+
+        logger.debug(f"Filename sanitized: '{filename}'")
+        return filename
     
     def encrypt_data(self, data: bytes, key: bytes = None, nonce: bytes = None, aad: bytes = None) -> Tuple[bytes, str, bytes, bytes]:
         """Encrypt with AES-256-GCM. Supports explicit Nonce and AAD."""
@@ -946,7 +1053,7 @@ class SecureFileTransferNode:
                             actual_write_path = Path(temp_path_str)
                             logger.info(f"[{thread_name}] Writing to temporary file: {actual_write_path.name}")
 
-                        file_handle = actual_write_path.open(mode)
+                        file_handle = protocol.safe_open_for_writing(actual_write_path, mode)
                         current_transfer = {'path': safe_path, 'handle': file_handle, 'total': total_size, 'hash': file_hash, 'temp_path': actual_write_path if use_temp_file else None}                        
                         ack_packet = protocol._create_json_packet(
                             'file_resume_ack', 
@@ -1530,7 +1637,7 @@ class SecureFileTransferNode:
                                 logger.info(f"File {filename} already complete. Overwriting.")
                                 current_offset = 0
                         
-                        file_handle = local_save_path.open(mode)
+                        file_handle = self.protocol.safe_open_for_writing(local_save_path, mode)
                         current_transfer = {'path': local_save_path, 'handle': file_handle, 'total': total_size, 'hash': file_hash}
                         
                         ack_packet = self.protocol._create_json_packet(

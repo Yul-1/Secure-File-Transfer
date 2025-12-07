@@ -10,7 +10,7 @@
 ; ==============================================================================
 
 #define MyAppName "SFT Secure File Transfer"
-#define MyAppVersion "1.8.0"
+#define MyAppVersion "2.0.1"
 #define MyAppPublisher "SFT Contributors"
 #define MyAppURL "https://github.com/yourusername/SFT"
 #define MyAppExeName "sft.bat"

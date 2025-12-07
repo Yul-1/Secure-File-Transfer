@@ -1,6 +1,6 @@
 # SFT Windows Installer - Complete Build Guide
 
-**Version: 2.0.0**
+**Version: 2.0.1**
 
 ## Overview
 
@@ -21,7 +21,7 @@ This is the **Windows installer implementation** - completely independent and fo
 ### Installer Components
 
 ```
-SFT-Setup-2.0.0-win64.exe
+SFT-Setup-2.0.1-win64.exe
 │
 ├── Python 3.11.9 Embedded Runtime (~30 MB)
 │   ├── python311.dll
@@ -157,7 +157,7 @@ C:\Program Files\SFT\
 
    The installer will be created at:
    ```
-   installer\output\SFT-Setup-2.0.0-win64.exe
+   installer\output\SFT-Setup-2.0.1-win64.exe
    ```
 
    Expected size: ~50-70 MB (compressed)
@@ -257,7 +257,7 @@ The build process consists of 9 automated steps:
 
 9. **Inno Setup Compilation**
    - Compiles `installer/sft-setup.iss` script
-   - Creates final `SFT-Setup-2.0.0-win64.exe` in `installer/output/`
+   - Creates final `SFT-Setup-2.0.1-win64.exe` in `installer/output/`
 
 ### Customization Points
 
@@ -267,7 +267,7 @@ Replace `installer/assets/sft.ico` with your custom icon (256x256 recommended).
 **Version Bump:**
 Edit `installer/sft-setup.iss`:
 ```pascal
-#define MyAppVersion "2.0.0"  // Change version here
+#define MyAppVersion "2.0.1"  // Change version here
 ```
 
 **Application Metadata:**
@@ -421,8 +421,8 @@ No CLI flags currently; modify script directly for customization.
 1. **GitHub Releases**
    ```bash
    # Tag release
-   git tag -a v2.0.0 -m "Windows installer release"
-   git push origin v2.0.0
+   git tag -a v2.0.1 -m "Windows installer release"
+   git push origin v2.0.1
 
    # Upload installer .exe to GitHub release
    ```
@@ -430,10 +430,10 @@ No CLI flags currently; modify script directly for customization.
 2. **Checksums**
    ```powershell
    # Windows (PowerShell)
-   Get-FileHash .\SFT-Setup-2.0.0-win64.exe -Algorithm SHA256
+   Get-FileHash .\SFT-Setup-2.0.1-win64.exe -Algorithm SHA256
 
    # Linux
-   sha256sum SFT-Setup-2.0.0-win64.exe
+   sha256sum SFT-Setup-2.0.1-win64.exe
    ```
 
    Publish checksum alongside installer for user verification.
@@ -453,7 +453,7 @@ Provide users with:
 
 2. **Installation Steps**
    ```
-   1. Download SFT-Setup-2.0.0-win64.exe
+   1. Download SFT-Setup-2.0.1-win64.exe
    2. Right-click > Properties > Unblock (if from internet)
    3. Double-click to run installer
    4. Follow installation wizard

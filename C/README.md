@@ -1,7 +1,7 @@
 # Secure File Transfer System - C Implementation
 
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-2.0.0-blue)](https://github.com/Yul-1/SFT)
+[![Version](https://img.shields.io/badge/version-2.0.1-blue)](https://github.com/Yul-1/SFT)
 [![Security](https://img.shields.io/badge/security-hardened-blueviolet)](https://github.com/Yul-1/SFT)
 [![Proxy Support](https://img.shields.io/badge/proxy-SOCKS4%2F5%20%7C%20HTTP-green)](https://github.com/Yul-1/SFT)
 [![Tests](https://img.shields.io/badge/tests-comprehensive-success)](https://github.com/Yul-1/SFT)
@@ -26,13 +26,13 @@
 
 This is the **C implementation** of the Secure File Transfer system - a bidirectional secure file transfer solution designed with hardware-accelerated cryptography for maximum performance on Linux/Unix platforms.
 
-**Current version: 2.0.0** - C-accelerated cryptographic operations with OpenSSL integration. Complete support for upload, download, remote file listing, and proxy connectivity.
+**Current version: 2.0.1** - Security hardening based on penetration testing results. Enhanced symlink protection, strengthened cryptographic validation, and comprehensive filename sanitization.
 
 ### Why Secure File Transfer?
 
 While established protocols like SCP and SFTP exist, Secure File Transfer serves as an in-depth study on implementing secure multi-layered software. The system implements advanced countermeasures against common vulnerabilities, offering a modern alternative with particular focus on memory security and resistance to sophisticated attacks.
 
-### Key Features v2.0.0
+### Key Features v2.0.1
 - **Secure upload** of files to the server
 - **Secure download** of files from the server
 - **Remote listing** to view available files
@@ -696,7 +696,17 @@ DEBUG=1 python3 sft.py --mode server --debug
 - [x] Proxy connection testing tool
 - [x] Gitignore updates and repository cleanup
 
-### Version 2.0.0 (Current - C Implementation)
+### Version 2.0.1 (Current - C Implementation)
+- [x] Security remediations based on comprehensive penetration testing
+- [x] Enhanced symlink attack protection with O_NOFOLLOW flag
+- [x] Strengthened filename sanitization (URL decoding, Unicode normalization)
+- [x] Enhanced memory clearing using ctypes.memset
+- [x] Increased PBKDF2 iterations to 600,000 (OWASP 2024 recommendation)
+- [x] Strengthened sequence number validation (strict monotonic enforcement)
+- [x] Updated cryptography library to version 43.0.1
+- [x] Comprehensive security hardening across all components
+
+### Version 2.0.0 - C Implementation
 - [x] Repository reorganization: Separated C, Rust, and Windows implementations
 - [x] C implementation isolated for Linux/Unix platforms
 - [x] Independent versioning starting at 2.0.0
