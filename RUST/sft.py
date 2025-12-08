@@ -320,7 +320,7 @@ class SecureProtocol:
 
         # Replay Bypass Mitigation: Sequence number tracking
         self.sequence_number = 0
-        self.peer_sequence_number = 0
+        self.peer_sequence_number = -1  # Sentinel: no packets received yet
         self.sequence_lock = threading.Lock()
         self.replay_window: Set[int] = set()
         self.replay_window_base = 0
