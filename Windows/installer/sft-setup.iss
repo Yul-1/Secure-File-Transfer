@@ -14,7 +14,7 @@
 #define MyAppPublisher "SFT Contributors"
 #define MyAppURL "https://github.com/yourusername/SFT"
 #define MyAppExeName "sft.bat"
-#define PythonVersion "3.11.9"
+#define PythonVersion "3.13.1"
 
 [Setup]
 ; Application metadata
@@ -88,12 +88,12 @@ Source: "..\installer\python-embedded\*"; DestDir: "{app}\python"; Components: p
 
 ; ===== Rust Crypto Module =====
 ; Pre-compiled .pyd file (built with maturin)
-Source: "..\target\wheels\crypto_accelerator.cp311-win_amd64.pyd"; DestDir: "{app}\python\Lib\site-packages"; Components: rustmodule; Flags: ignoreversion
+Source: "..\target\wheels\crypto_accelerator.cp313-win_amd64.pyd"; DestDir: "{app}\python\Lib\site-packages"; Components: rustmodule; Flags: ignoreversion
 
 ; ===== SFT Application Files =====
 Source: "..\sft.py"; DestDir: "{app}"; Components: core; Flags: ignoreversion
 Source: "..\python_wrapper.py"; DestDir: "{app}"; Components: core; Flags: ignoreversion
-Source: "..\requirements.txt"; DestDir: "{app}"; Components: core; Flags: ignoreversion isreadme
+Source: "..\requirements-runtime.txt"; DestDir: "{app}"; DestName: "requirements.txt"; Components: core; Flags: ignoreversion isreadme
 Source: "..\README.md"; DestDir: "{app}"; Components: core; Flags: ignoreversion isreadme
 Source: "..\system_requirements.txt"; DestDir: "{app}"; Components: core; Flags: ignoreversion
 
@@ -108,6 +108,10 @@ Source: "..\installer\launchers\sft-client.bat"; DestDir: "{app}"; Components: c
 
 ; ===== Assets =====
 Source: "..\installer\assets\sft.ico"; DestDir: "{app}"; Components: core; Flags: ignoreversion
+
+; ===== Visual C++ Redistributable =====
+; Downloaded by build-installer.ps1, will be installed if needed
+Source: "..\installer\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 ; ===== Visual C++ Redistributable Detection =====
 ; NOTE: VCRedist installation handled in [Run] section
@@ -204,8 +208,8 @@ begin
   if CurStep = ssPostInstall then
   begin
     // Configure Python embedded to recognize site-packages
-    // Create or modify python311._pth to include Lib\site-packages
-    PthFilePath := ExpandConstant('{app}\python\python311._pth');
+    // Create or modify python313._pth to include Lib\site-packages
+    PthFilePath := ExpandConstant('{app}\python\python313._pth');
 
     if FileExists(PthFilePath) then
     begin

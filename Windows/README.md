@@ -8,14 +8,98 @@ This document describes the complete process for building a standalone Windows i
 
 This is the **Windows installer implementation** - completely independent and focused solely on Windows platform packaging and distribution.
 
+## ⚠️ IMPORTANT NOTES - Post-Repository Reorganization
+
+**Date:** 2025-12-08
+**Status:** Installer configuration has been updated to work with the reorganized repository structure.
+
+### Repository Structure Changes
+
+After commit `b815106` (repository reorganization), the SFT codebase was split into separate implementation directories:
+- `SFT/RUST/` - Rust implementation with Python wrapper
+- `SFT/C/` - C implementation
+- `SFT/Windows/` - Windows installer (this directory)
+
+**Original Problem:** The installer scripts were written assuming all source files would be in `Windows/`, but they actually reside in `../RUST/`.
+
+### Applied Corrections (Soluzione A - Quick Fix)
+
+The following corrections have been applied to make the installer functional:
+
+1. **Source Files Copied to Windows/**:
+   - `sft.py` (from RUST/)
+   - `python_wrapper.py` (from RUST/)
+   - `system_requirements.txt` (from RUST/)
+
+   ⚠️ **Note:** These are duplicates. Any updates to the RUST implementation must be manually re-copied.
+
+2. **Runtime-Only Dependencies**:
+   - Created `requirements-runtime.txt` (excludes pytest, maturin, dev tools)
+   - Updated `build-installer.ps1` to use this file (line 151)
+   - Updated `sft-setup.iss` to package this file (line 96)
+
+   **Benefit:** Reduces installer size by ~15-20 MB
+
+3. **VC++ Redistributable Bundling**:
+   - Added VC++ Redist as bundled file in `sft-setup.iss` (line 114)
+   - Fixes installation failure when VC++ is not present on target system
+
+### Still Required: Rust Module Compilation
+
+**CRITICAL:** The Rust `crypto_accelerator` module must be compiled for Windows:
+
+```powershell
+# On Windows machine, from SFT/RUST/ directory:
+cd ..\RUST
+maturin build --release --target x86_64-pc-windows-msvc --interpreter python3.13
+
+# Then copy the .whl file to Windows/target/wheels/
+New-Item -ItemType Directory -Force -Path ..\Windows\target\wheels
+Copy-Item target\wheels\crypto_accelerator-*.whl ..\Windows\target\wheels\
+```
+
+Or use cross-compilation from Linux (requires cargo-xwin):
+```bash
+cd /home/vmbox/SFT/RUST
+cargo install cargo-xwin
+cargo xwin build --release --target x86_64-pc-windows-msvc
+```
+
+### Files NOT Yet Fixed
+
+The following still need to be addressed manually:
+
+- **`installer/assets/sft.ico`**: Currently a text placeholder, not a real icon file
+  - Replace with a valid 256x256 .ico file before building
+  - Or comment out line 38 in `sft-setup.iss` to use default icon
+
+- **Rust source files**: `Windows/` does not contain `Cargo.toml` or `src/`
+  - The build script will fail if run from `Windows/`
+  - Must run Rust compilation from `RUST/` directory
+
+### Recommended Workflow
+
+1. Make code changes in `RUST/` directory
+2. Before building Windows installer, copy updated files:
+   ```powershell
+   Copy-Item ..\RUST\sft.py Windows\sft.py -Force
+   Copy-Item ..\RUST\python_wrapper.py Windows\python_wrapper.py -Force
+   ```
+3. Compile Rust module for Windows from `RUST/`
+4. Run `build-installer.ps1` from `Windows/installer/`
+
+### Future Improvement (Soluzione B)
+
+For a more robust solution, consider modifying the installer scripts to directly reference `../RUST/` files instead of copying them. This would eliminate duplication but requires more extensive script changes.
+
 ## Installer Architecture
 
 ### Technology Stack
 
 - **Packaging**: Inno Setup 6.x (mature, open-source Windows installer creator)
-- **Python Runtime**: Embedded Python 3.11.9 (standalone, ~30MB)
+- **Python Runtime**: Embedded Python 3.13.1 (standalone, ~30MB)
 - **Crypto Module**: Rust `crypto_accelerator` compiled to `.pyd` (MSVC ABI)
-- **Dependencies**: Pre-installed Python packages (cryptography, PyNaCl, etc.)
+- **Dependencies**: Pre-installed Python packages (cryptography, jsonschema, etc.)
 - **Target Platforms**: Windows 8, 8.1, 10, 11 (x86_64 only)
 
 ### Installer Components
@@ -23,13 +107,13 @@ This is the **Windows installer implementation** - completely independent and fo
 ```
 SFT-Setup-2.0.1-win64.exe
 │
-├── Python 3.11.9 Embedded Runtime (~30 MB)
-│   ├── python311.dll
+├── Python 3.13.1 Embedded Runtime (~30 MB)
+│   ├── python313.dll
 │   ├── python.exe
 │   └── Standard library
 │
 ├── Rust Crypto Module
-│   └── crypto_accelerator.cp311-win_amd64.pyd
+│   └── crypto_accelerator.cp313-win_amd64.pyd
 │
 ├── SFT Application Files
 │   ├── sft.py (main transfer protocol)
@@ -53,13 +137,13 @@ SFT-Setup-2.0.1-win64.exe
 C:\Program Files\SFT\
 ├── python\                     # Embedded Python runtime
 │   ├── python.exe
-│   ├── python311.dll
-│   ├── python311._pth          # Path configuration
+│   ├── python313.dll
+│   ├── python313._pth          # Path configuration
 │   └── Lib\
 │       └── site-packages\      # Pre-installed dependencies
 │           ├── cryptography\
-│           ├── nacl\
-│           └── crypto_accelerator.cp311-win_amd64.pyd
+│           ├── jsonschema\
+│           └── crypto_accelerator.cp313-win_amd64.pyd
 │
 ├── sft.py                      # Main application
 ├── python_wrapper.py           # Crypto wrapper
@@ -79,7 +163,7 @@ C:\Program Files\SFT\
 - [Rust toolchain](https://rustup.rs/) (latest stable)
   - Target: `x86_64-pc-windows-msvc`
   - MSVC build tools (installed via rustup)
-- [Python 3.11+](https://www.python.org/downloads/)
+- [Python 3.13+](https://www.python.org/downloads/)
 - [Inno Setup 6.x](https://jrsoftware.org/isdl.php)
 - Internet connection (for downloading Python embedded package)
 
@@ -122,7 +206,7 @@ C:\Program Files\SFT\
    rustc --version
    rustup target list --installed  # Should show x86_64-pc-windows-msvc
 
-   # Install Python 3.11+
+   # Install Python 3.13+
    # Download from https://www.python.org/downloads/
 
    # Install maturin
@@ -336,7 +420,7 @@ cargo install cargo-zigbuild
 .\installer\build-installer.ps1  # Windows
 
 # Or manually download and extract:
-# https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip
+# https://www.python.org/ftp/python/3.13.1/python-3.13.1-embed-amd64.zip
 # Extract to: installer/python-embedded/
 ```
 
@@ -525,21 +609,24 @@ Provide users with:
 
 ### Python Version Upgrade
 
-To upgrade embedded Python (e.g., 3.11.9 → 3.12.0):
+To upgrade embedded Python (e.g., 3.13.1 → 3.14.0):
 
 1. Update `PYTHON_VERSION` in build scripts:
-   - `installer/build-installer.ps1`: Line 12
-   - `installer/build-installer-linux.sh`: Line 13
+   - `installer/build-installer.ps1`: Line 22
+   - `installer/build-installer-linux.sh`: Line 13 (if exists)
 
 2. Update Inno Setup script:
-   - `installer/sft-setup.iss`: `#define PythonVersion`
+   - `installer/sft-setup.iss`: `#define PythonVersion` (Line 17)
 
-3. Rebuild Rust module for new Python version:
+3. Update Python _pth file reference in Inno Setup:
+   - `installer/sft-setup.iss`: Update `PthFilePath` in `CurStepChanged` function (Line 212)
+
+4. Rebuild Rust module for new Python version:
    ```bash
-   maturin build --release --target x86_64-pc-windows-msvc
+   maturin build --release --target x86_64-pc-windows-msvc --interpreter python3.14
    ```
 
-4. Ensure ABI compatibility (`.pyd` filename must match Python version)
+5. Ensure ABI compatibility (`.pyd` filename must match Python version, e.g., cp314)
 
 ## Advanced Topics
 
