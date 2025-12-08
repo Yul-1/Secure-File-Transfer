@@ -363,32 +363,36 @@ class SecureProtocol:
 
             return True
 
-    def safe_open_for_writing(self, path: Path, mode: str = 'wb'):
+    def safe_open_for_writing(self, path: Path, mode: str = 'wb', validate_output_dir: bool = True):
         """
         Safely open file for writing, preventing symlink attacks.
         Uses O_NOFOLLOW to prevent TOCTOU race conditions.
 
         Args:
-            path: Target file path (must be within OUTPUT_DIR)
+            path: Target file path
             mode: File open mode ('wb', 'ab', etc.)
+            validate_output_dir: If True (server), enforce OUTPUT_DIR containment.
+                               If False (client), skip OUTPUT_DIR validation.
 
         Returns:
             File handle
 
         Raises:
-            SecurityError: If path is symlink or outside OUTPUT_DIR
+            SecurityError: If path is symlink or outside OUTPUT_DIR (when validated)
         """
         import errno
 
         abs_path = path.resolve()
 
-        try:
-            is_relative = abs_path.is_relative_to(OUTPUT_DIR.resolve())
-        except (ValueError, AttributeError):
-            is_relative = False
+        # Server-side path traversal protection (only when validate_output_dir=True)
+        if validate_output_dir:
+            try:
+                is_relative = abs_path.is_relative_to(OUTPUT_DIR.resolve())
+            except (ValueError, AttributeError):
+                is_relative = False
 
-        if not is_relative:
-            raise PermissionError(f"Path outside OUTPUT_DIR: {abs_path}")
+            if not is_relative:
+                raise PermissionError(f"Path outside OUTPUT_DIR: {abs_path}")
 
         if path.is_symlink():
             raise PermissionError(f"Symlink detected: {path}")
@@ -1037,7 +1041,7 @@ class SecureFileTransferNode:
                             actual_write_path = Path(temp_path_str)
                             logger.info(f"[{thread_name}] Writing to temporary file: {actual_write_path.name}")
 
-                        file_handle = protocol.safe_open_for_writing(actual_write_path, mode)
+                        file_handle = protocol.safe_open_for_writing(actual_write_path, mode, validate_output_dir=True)
                         current_transfer = {'path': safe_path, 'handle': file_handle, 'total': total_size, 'hash': file_hash, 'temp_path': actual_write_path if use_temp_file else None}                        
                         ack_packet = protocol._create_json_packet(
                             'file_resume_ack', 
@@ -1621,7 +1625,7 @@ class SecureFileTransferNode:
                                 logger.info(f"File {filename} already complete. Overwriting.")
                                 current_offset = 0
 
-                        file_handle = self.protocol.safe_open_for_writing(local_save_path, mode)
+                        file_handle = self.protocol.safe_open_for_writing(local_save_path, mode, validate_output_dir=False)
                         current_transfer = {'path': local_save_path, 'handle': file_handle, 'total': total_size, 'hash': file_hash}
                         
                         ack_packet = self.protocol._create_json_packet(
