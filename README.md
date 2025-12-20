@@ -299,4 +299,3 @@ MIT License - See implementation directories for full license text.
 
 - **GitHub**: [@Yul-1](https://github.com/Yul-1)
 - **Issues**: [GitHub Issues](https://github.com/Yul-1/SFT/issues)
-- **Email**: yul.cysec@gmail.com
