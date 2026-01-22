@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  sft-server:
+    build: .
+    image: sft-rust:alpine
+    container_name: sft-server
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./data/files:/app/files
+      - ./data/logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', 5555)); s.close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
