@@ -82,12 +82,12 @@ class SecurityConfig:
     hash_algorithm: str = "SHA256"
     rsa_key_size: int = field(default=4096)
     use_hardware_acceleration: bool = True
-    pbkdf2_iterations: int = field(default=100000)
-    
+    pbkdf2_iterations: int = field(default=600000)
+
     def __post_init__(self):
-        if self.pbkdf2_iterations < 100000:
-            logger.warning("PBKDF2 iterations too low, setting to 100000")
-            self.pbkdf2_iterations = 100000
+        if self.pbkdf2_iterations < 600000:
+            logger.warning("PBKDF2 iterations too low, setting to 600000")
+            self.pbkdf2_iterations = 600000
 
 class SecureCrypto:
     """
