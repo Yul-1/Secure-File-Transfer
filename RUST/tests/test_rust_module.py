@@ -166,7 +166,7 @@ def test_pbkdf2():
 
     password = b"user_password_123"
     salt = crypto_rust.generate_secure_random(16)
-    iterations = 100000
+    iterations = 600000
     key_length = 32
 
     print(f"Password: {password.decode()}")
