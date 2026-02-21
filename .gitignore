@@ -204,4 +204,10 @@ secrets.json
 .tmp/
 temp/
 tmp/
+docker-test/
+
+# Docker evaluation and audit reports
+Docker/DOCKER_EVALUATION.md
+Docker/SECURITY_AUDIT.md
+
 CLAUDE.md
