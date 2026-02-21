@@ -1,0 +1,36 @@
+services:
+  sft-server:
+    build:
+      context: ../RUST
+      dockerfile: ../Docker/Dockerfile.rust
+    container_name: sft-server
+    ports:
+      - "5555:5555"
+    volumes:
+      - sft-data:/app/ricevuti
+      - /etc/localtime:/etc/localtime:ro
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Europe/Rome
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "sft.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      sft-net:
+        ipv4_address: 192.168.0.201
+
+volumes:
+  sft-data:
+    driver: local
+
+networks:
+  sft-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.0.0/24
+          gateway: 192.168.0.1

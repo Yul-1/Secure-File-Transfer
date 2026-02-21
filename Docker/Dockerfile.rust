@@ -1,0 +1,49 @@
+# Stage 1: Builder
+FROM python:3.12-slim AS builder
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    python3-dev \
+    curl \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /build
+
+# Python dependencies first for layer caching
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Rust project files
+COPY Cargo.toml Cargo.lock ./
+COPY src/ ./src/
+
+# Build and install Rust extension
+RUN maturin build --release && \
+    pip install --no-cache-dir target/wheels/*.whl
+
+# Stage 2: Runtime
+FROM python:3.12-slim
+
+RUN groupadd -r sftuser && useradd -r -g sftuser -u 1000 sftuser
+
+WORKDIR /app
+
+COPY sft.py python_wrapper.py ./
+
+COPY --from=builder /usr/local/lib/python3.12/site-packages/ /usr/local/lib/python3.12/site-packages/
+
+RUN mkdir -p /app/ricevuti && \
+    chown -R sftuser:sftuser /app
+
+USER sftuser
+
+EXPOSE 5555
+VOLUME ["/app/ricevuti"]
+
+ENTRYPOINT ["python3", "sft.py"]
+CMD ["--mode", "server", "--port", "5555"]
