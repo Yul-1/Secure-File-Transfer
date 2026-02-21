@@ -10,6 +10,45 @@ All notable changes to the Docker configuration will be documented in this file.
 - **docker-compose.yml**: Added timezone synchronization with host via `TZ=Europe/Rome` environment variable and `/etc/localtime` bind mount. Fixes SFT protocol timestamp validation failure caused by UTC/CET offset between container and host.
 - **docker-compose.yml**: Replaced TCP socket healthcheck with process-based check (`pgrep -f sft.py`). The previous healthcheck opened and immediately closed TCP connections to port 5555, causing spurious handshake failure warnings in server logs.
 
+### Next Steps
+
+Based on the Docker Evaluation and Security Audit reports, the following improvements are planned in priority order.
+
+#### Phase 1: Critical Fixes
+
+- [ ] Replace `curl | sh` Rustup installation with official `rust:1.75-slim` builder image to eliminate supply chain attack vector
+- [ ] Add resource limits (`cpus`, `memory`, `pids`) to docker-compose to prevent DoS via resource exhaustion
+- [ ] Replace `pgrep` healthcheck with functional TCP socket check that suppresses protocol handshake (or add a dedicated health endpoint to `sft.py`)
+- [ ] Configure log rotation (`json-file` driver with `max-size` and `max-file`) to prevent unbounded disk growth
+
+#### Phase 2: Security Hardening
+
+- [ ] Drop all Linux capabilities (`cap_drop: ALL`) since port 5555 does not require `NET_BIND_SERVICE`
+- [ ] Add `security_opt: no-new-privileges:true` to prevent privilege escalation
+- [ ] Set `read_only: true` on root filesystem with `tmpfs` mounts for `/tmp` and writable paths
+- [ ] Change `sftuser` UID from 1000 to a high UID (e.g. 65534) to avoid host UID collision
+- [ ] Restrict `/app/*.py` to read-only (chmod 500) so only `/app/ricevuti` is writable
+- [ ] Pin base image by digest (`python:3.12-slim@sha256:...`) and APT package versions for reproducible builds
+- [ ] Evaluate upgrading `cryptography` library from 43.0.1 to address known CVEs
+
+#### Phase 3: Build Optimization
+
+- [ ] Implement Cargo dependency caching layer (dummy `lib.rs` build before copying source) for 2-5x faster rebuilds
+- [ ] Split `requirements.txt` into `requirements-runtime.txt` and `requirements-build.txt` to exclude test deps (pytest, freezegun) from final image (~30MB reduction)
+- [ ] Add `ARG` directives for Python/Rust version pinning
+- [ ] Evaluate Alpine base image for ~50% image size reduction (currently 239MB)
+- [ ] Add `STOPSIGNAL SIGTERM` for graceful shutdown
+
+#### Phase 4: Production Readiness
+
+- [ ] Implement secrets management via Docker secrets for any future authentication keys
+- [ ] Add TLS termination (reverse proxy or application-level)
+- [ ] Configure centralized logging (syslog or ELK/Loki)
+- [ ] Add Prometheus metrics exporter for monitoring
+- [ ] Set up automated volume backup with retention policy
+- [ ] Evaluate multi-replica deployment with load balancer for high availability
+- [ ] Add multi-platform build support (linux/amd64, linux/arm64)
+
 ## [2026-02-21]
 
 ### Added
