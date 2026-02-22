@@ -4,8 +4,6 @@ services:
       context: ../RUST
       dockerfile: ../Docker/Dockerfile.rust
     container_name: sft-server
-    ports:
-      - "5555:5555"
     volumes:
       - sft-data:/app/ricevuti
       - /etc/localtime:/etc/localtime:ro
@@ -20,7 +18,7 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      sft-net:
+      sft-lan:
         ipv4_address: 192.168.0.201
 
 volumes:
@@ -28,8 +26,11 @@ volumes:
     driver: local
 
 networks:
-  sft-net:
-    driver: bridge
+  sft-lan:
+    driver: ipvlan
+    driver_opts:
+      parent: enp44s0
+      ipvlan_mode: l2
     ipam:
       config:
         - subnet: 192.168.0.0/24

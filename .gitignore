@@ -206,8 +206,9 @@ temp/
 tmp/
 docker-test/
 
-# Docker evaluation and audit reports
+# Docker evaluation, audit reports and changelog
 Docker/DOCKER_EVALUATION.md
 Docker/SECURITY_AUDIT.md
+Docker/CHANGELOG.md
 
 CLAUDE.md
