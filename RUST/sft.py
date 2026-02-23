@@ -404,13 +404,20 @@ class SecureProtocol:
         else:
             flags |= os.O_TRUNC
 
-        flags |= os.O_NOFOLLOW
+        # O_NOFOLLOW is POSIX-only; symlink protection on Windows is handled
+        # by the explicit is_symlink() check above (line 397)
+        if hasattr(os, 'O_NOFOLLOW'):
+            flags |= os.O_NOFOLLOW
+
+        # O_BINARY is Windows-only: prevents CRLF translation for binary files
+        if hasattr(os, 'O_BINARY'):
+            flags |= os.O_BINARY
 
         try:
             fd = os.open(abs_path, flags, 0o600)
             return os.fdopen(fd, mode)
         except OSError as e:
-            if e.errno == errno.ELOOP:
+            if hasattr(errno, 'ELOOP') and e.errno == errno.ELOOP:
                 raise PermissionError("Symlink detected via O_NOFOLLOW")
             raise
 
@@ -1834,8 +1841,10 @@ def main():
             temp_download_path: Optional[Path] = None
 
             if args.download:
-                remote_filename_to_request = args.download
-                safe_local_filename = os.path.basename(remote_filename_to_request)
+                # Normalize: strip leading slashes so the server's sanitize_filename
+                # comparison doesn't flag it as a path traversal attempt.
+                remote_filename_to_request = os.path.basename(args.download)
+                safe_local_filename = remote_filename_to_request
                 if not safe_local_filename:
                      print(f"[ERROR] Invalid remote filename: {remote_filename_to_request}")
                      return
@@ -1907,7 +1916,7 @@ def main():
                     actual_download_path = temp_download_path if temp_download_path else local_save_path_for_download
                     
                     node.download_file(
-                        args.download,
+                        remote_filename_to_request,
                         actual_download_path,
                         progress_callback=simple_progress_callback
                     )
