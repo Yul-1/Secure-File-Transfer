@@ -1753,22 +1753,22 @@ def simple_progress_callback(filename: str, current_bytes: int, total_bytes: int
 
 def main():
     parser = argparse.ArgumentParser(description="Secure File Transfer Node (v2.7 - Bidirectional & Proxy)")
-    parser.add_argument('--mode', choices=['server', 'client'], required=True, help='Run as server or client')
-    parser.add_argument('--host', type=str, default='0.0.0.0', help='Binding host IP for server')
-    parser.add_argument('--port', type=int, default=DEFAULT_PORT, help='Port number')
-    parser.add_argument('--connect', type=str, help='Server IP:Port to connect (client mode)')
-    
+    parser.add_argument('-m', '--mode', choices=['server', 'client'], required=True, help='Run as server or client')
+    parser.add_argument('-H', '--host', type=str, default='0.0.0.0', help='Binding host IP for server')
+    parser.add_argument('-p', '--port', type=int, default=DEFAULT_PORT, help='Port number')
+    parser.add_argument('-c', '--connect', type=str, help='Server IP:Port to connect (client mode)')
+
     # Proxy arguments
     parser.add_argument('--proxy-type', choices=['socks4', 'socks5', 'http'], help='Proxy type')
     parser.add_argument('--proxy-host', type=str, help='Proxy host IP')
     parser.add_argument('--proxy-port', type=int, help='Proxy port')
     parser.add_argument('--proxy-user', type=str, help='Proxy username')
     parser.add_argument('--proxy-pass', type=str, help='Proxy password')
-    
-    parser.add_argument('--file', type=str, help='Path to the file to UPLOAD (client mode)')
-    parser.add_argument('--list', action='store_true', help='List remote files on server (client mode)')
-    parser.add_argument('--download', type=str, help='Filename of the remote file to DOWNLOAD (client mode)')
-    parser.add_argument('--output', type=str, default='.', help='Local directory or path to save downloaded file (default: current dir)')
+
+    parser.add_argument('-f', '--file', type=str, help='Path to the file to UPLOAD (client mode)')
+    parser.add_argument('-l', '--list', action='store_true', help='List remote files on server (client mode)')
+    parser.add_argument('-d', '--download', type=str, help='Filename of the remote file to DOWNLOAD (client mode)')
+    parser.add_argument('-o', '--output', type=str, default='.', help='Local directory or path to save downloaded file (default: current dir)')
     
     args = parser.parse_args()
 
