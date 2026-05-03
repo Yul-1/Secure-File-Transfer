@@ -211,4 +211,7 @@ Docker/DOCKER_EVALUATION.md
 Docker/SECURITY_AUDIT.md
 Docker/CHANGELOG.md
 
+# Personal deploy configs (host-specific, never push to GitHub)
+Docker/deploy/
+
 CLAUDE.md
