@@ -20,7 +20,7 @@ services:
       start_period: 10s
     networks:
       sft-lan:
-        ipv4_address: 192.168.x.x
+        ipv4_address: ${CONTAINER_IP}
 
 volumes:
   sft-data:
@@ -30,9 +30,9 @@ networks:
   sft-lan:
     driver: ipvlan
     driver_opts:
-      parent: <your-interface>
+      parent: ${PARENT_IFACE}
       ipvlan_mode: l2
     ipam:
       config:
-        - subnet: 192.168.x.0/24
-          gateway: 192.168.x.x
+        - subnet: ${LAN_SUBNET}
+          gateway: ${LAN_GATEWAY}
