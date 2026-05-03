@@ -2,7 +2,8 @@ services:
   sft-server:
     build:
       context: ../RUST
-      dockerfile: ../Docker/Dockerfile.rust
+      dockerfile: Dockerfile
+    image: sft-rust:alpine
     container_name: sft-server
     volumes:
       - sft-data:/app/ricevuti
